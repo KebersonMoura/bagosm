@@ -1,0 +1,25 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,300..900;1,300..900&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&family=Space+Grotesk:wght@300..700&display=swap');
+@import "leaflet/dist/leaflet.css";
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+
+  --color-brand-green: #ab1a15;
+  --color-brand-green-dark: #8a120e;
+  --color-brand-yellow: #f09534;
+  --color-brand-yellow-dark: #d17b20;
+  --color-brand-dark: #1A1C23;
+  --color-brand-bg: #ffe3ba;
+}
+
+@layer utilities {
+  .shadow-professional {
+    box-shadow: 0 4px 6px -1px rgba(171, 26, 21, 0.05), 0 2px 4px -1px rgba(171, 26, 21, 0.03);
+  }
+  .shadow-professional-lg {
+    box-shadow: 0 10px 15px -3px rgba(171, 26, 21, 0.07), 0 4px 6px -2px rgba(171, 26, 21, 0.05);
+  }
+}

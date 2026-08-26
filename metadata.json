@@ -1,0 +1,6 @@
+{
+  "name": "Bagô - Sistema de Pedidos",
+  "description": "Sistema de atendimento e pedidos para a Bagô, com personalização, rastreamento em tempo real, painel de cozinha e controle de estoque administrativo.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
