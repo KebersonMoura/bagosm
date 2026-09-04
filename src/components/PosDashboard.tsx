@@ -4512,32 +4512,10 @@ export default function PosDashboard({
                         </span>
                       </div>
 
-                      {/* Customization Details if Sandwich or Salad */}
-                      {item.sandwich && (
-                        <div className="text-[11px] text-slate-600 space-y-0.5 pt-1.5 border-t border-slate-100 bg-slate-50/70 p-2 rounded-md font-medium">
-                          {item.sandwich.bread && (
-                            <p><strong className="text-slate-800 font-bold">Pão:</strong> {item.sandwich.bread}</p>
-                          )}
-                          {item.sandwich.protein && (
-                            <p><strong className="text-slate-800 font-bold">Proteína:</strong> {item.sandwich.protein}</p>
-                          )}
-                          {item.sandwich.cheese && item.sandwich.cheese !== 'Sem Queijo' && (
-                            <p><strong className="text-slate-800 font-bold">Queijo:</strong> {item.sandwich.cheese}</p>
-                          )}
-                          {item.sandwich.veggies && item.sandwich.veggies.length > 0 && (
-                            <p><strong className="text-slate-800 font-bold">Salada:</strong> {item.sandwich.veggies.join(', ')}</p>
-                          )}
-                          {item.sandwich.sauces && item.sandwich.sauces.length > 0 && (
-                            <p><strong className="text-slate-800 font-bold">Molhos:</strong> {item.sandwich.sauces.join(', ')}</p>
-                          )}
-                          {item.sandwich.extras && item.sandwich.extras.length > 0 && (
-                            <p><strong className="text-slate-800 font-bold">Adicionais:</strong> {item.sandwich.extras.join(', ')}</p>
-                          )}
-                          {item.sandwich.toasted !== undefined && (
-                            <p className="font-bold text-amber-800 pt-0.5">
-                              {item.sandwich.toasted ? '🔥 Tostado / Quentinho' : '❄️ Frio'}
-                            </p>
-                          )}
+                      {/* Adicionais if Sandwich or Salad */}
+                      {item.sandwich && item.sandwich.extras && item.sandwich.extras.length > 0 && (
+                        <div className="text-[11px] text-slate-600 space-y-0.5 pt-1 border-t border-slate-100 bg-slate-50/70 p-1.5 rounded-md font-medium">
+                          <p><strong className="text-slate-800 font-bold">➕ Adicionais:</strong> {item.sandwich.extras.join(', ')}</p>
                         </div>
                       )}
                     </div>
@@ -4632,7 +4610,7 @@ export default function PosDashboard({
             <div className="flex flex-col gap-2 pt-2 border-t border-slate-100 shrink-0">
               <button
                 type="button"
-                onClick={() => printThermalReceipt(completedOrder)}
+                onClick={() => printThermalReceipt(completedOrder, { isPosReceipt: true })}
                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer"
               >
                 <Printer className="h-4 w-4" />
@@ -4642,11 +4620,11 @@ export default function PosDashboard({
               <div className="flex gap-2">
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={() => printThermalReceipt(completedOrder, { isPosReceipt: true })}
                   className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                 >
                   <Printer className="h-3.5 w-3.5 text-slate-600" />
-                  <span>Imprimir Recibo Padrão</span>
+                  <span>Imprimir Recibo</span>
                 </button>
                 <button
                   type="button"

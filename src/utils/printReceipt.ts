@@ -34,8 +34,11 @@ const isProteinExtra = (name: string): boolean => {
   );
 };
 
-export const printThermalReceipt = (order: Order, options?: { isKitchenTicket?: boolean }) => {
+export const printThermalReceipt = (order: Order, options?: { isKitchenTicket?: boolean; isPosReceipt?: boolean }) => {
   if (!order) return;
+
+  const isKitchen = !!options?.isKitchenTicket;
+  const isPos = (!!order.isPosOrder || !!options?.isPosReceipt) && !isKitchen;
 
   const timeStr = formatTimeBrasilia(order.createdAt || new Date());
   const dateStr = formatDateBrasilia(order.createdAt || new Date());
@@ -116,13 +119,44 @@ export const printThermalReceipt = (order: Order, options?: { isKitchenTicket?: 
   }
 
   const itemsHtml = (order.items || []).map(item => {
+    const itemTotal = ((Number(item.price) || 0) * (Number(item.quantity) || 1)).toFixed(2).replace('.', ',');
+    const qty = Number(item.quantity) || 1;
+
+    // For POS orders: show only the lanche/salada and any adicionais, without standard ingredients
+    if (isPos) {
+      const sw = item.sandwich;
+      const titleName = item.productName || (sw?.protein ? `BAGÔ ${sw.protein}` : 'ITEM');
+      const extras = sw?.extras || [];
+      const drinksAndCookies = sw?.drinksAndCookies || [];
+
+      return `
+        <div style="border-top: 1px dashed #000; padding: 6px 0; margin-top: 6px;">
+          <div style="font-size: 13px; font-weight: 900; display: flex; justify-content: space-between;">
+            <span>☑️ ${qty}x ${titleName}</span>
+            <span>R$ ${itemTotal}</span>
+          </div>
+          ${extras.length > 0 ? `
+            <div style="margin-top: 2px; padding-left: 14px; font-size: 11px; font-weight: bold; color: #111;">
+              ${extras.map(e => `<div>➕ Adicional: ${e}</div>`).join('')}
+            </div>
+          ` : ''}
+          ${drinksAndCookies.length > 0 ? `
+            <div style="margin-top: 2px; padding-left: 14px; font-size: 11px; font-weight: bold; color: #111;">
+              ${drinksAndCookies.map(dc => `<div>🥤 ${dc}</div>`).join('')}
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    // Default / Kitchen ticket format with full ingredients breakdown
     if (item.sandwich) {
       const sw = item.sandwich;
       const extraProteins = (sw.extras || []).filter(isProteinExtra);
       const otherExtras = (sw.extras || []).filter(e => !isProteinExtra(e));
 
       const titleName = item.productName || (sw.protein ? `BAGÔ ${sw.protein}` : 'BAGÔ SANDUÍCHE');
-      const qtySuffix = item.quantity > 1 ? ` (${item.quantity}x)` : '';
+      const qtySuffix = qty > 1 ? ` (${qty}x)` : '';
 
       return `
         <div style="margin-top: 10px; margin-bottom: 12px;">
@@ -165,18 +199,15 @@ export const printThermalReceipt = (order: Order, options?: { isKitchenTicket?: 
             <div style="margin-top: 6px; font-weight: 900; font-size: 12px;">🥤 BEBIDAS / ACOMPANHAMENTOS</div>
             ${sw.drinksAndCookies.map(dc => `<div style="font-size: 12px; font-weight: bold; padding-left: 4px;">☑️ ${dc}</div>`).join('')}
           ` : ''}
-
-
         </div>
       `;
     }
 
     // Ready products / standard items
-    const itemTotal = ((Number(item.price) || 0) * (Number(item.quantity) || 1)).toFixed(2).replace('.', ',');
     return `
       <div style="border-top: 1px dashed #000; padding: 6px 0; margin-top: 8px;">
         <div style="font-size: 12px; font-weight: 900; display: flex; justify-content: space-between;">
-          <span>☑️ ${item.quantity}x ${item.productName || 'Produto'}</span>
+          <span>☑️ ${qty}x ${item.productName || 'Produto'}</span>
           <span>R$ ${itemTotal}</span>
         </div>
       </div>

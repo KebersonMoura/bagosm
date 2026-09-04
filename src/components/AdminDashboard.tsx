@@ -63,11 +63,21 @@ import {
   Instagram,
   Globe,
   CreditCard,
-  Flame
+  Flame,
+  Cpu,
+  Server,
+  Sparkles
 } from 'lucide-react';
+import { 
+  APP_VERSION, 
+  APP_VERSION_LABEL, 
+  APP_LAST_UPDATE, 
+  APP_LAST_UPDATE_TIME, 
+  APP_RELEASE_NAME, 
+  APP_CHANGELOG_HIGHLIGHTS 
+} from '../version';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { DeliveryMapPicker } from './DeliveryMapPicker';
 import { ClosedCashRegistersPanel } from './ClosedCashRegistersPanel';
 import {
   getDeliverySettings,
@@ -199,7 +209,7 @@ export default function AdminDashboard({
   const [storeLogoInput, setStoreLogoInput] = useState(() => localStorage.getItem('bago_store_logo') || '');
 
   // System Config Sub-tabs & Delivery Fee State
-  const [settingsSubTab, setSettingsSubTab] = useState<'users' | 'delivery' | 'schedule' | 'whatsapp' | 'coupons' | 'card-machines' | 'info'>('users');
+  const [settingsSubTab, setSettingsSubTab] = useState<'users' | 'delivery' | 'schedule' | 'whatsapp' | 'coupons' | 'card-machines' | 'info' | 'system'>('users');
   const [deliveryConfig, setDeliveryConfig] = useState<StoreDeliverySettings>(() => getDeliverySettings());
   const [deliverySaveSuccess, setDeliverySaveSuccess] = useState<string | null>(null);
   const [savingDeliverySettings, setSavingDeliverySettings] = useState(false);
@@ -5356,14 +5366,38 @@ export default function AdminDashboard({
             <div className="space-y-6">
               {/* Header Bar */}
           <div className="bg-white rounded-2xl p-4 sm:p-6 border border-slate-200 shadow-sm flex flex-col gap-4">
-            <div>
-              <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
-                <Settings className="h-5 w-5 text-brand-green" />
-                <span>Configurações do Sistema e Entrega</span>
-              </h3>
-              <p className="text-slate-500 text-xs mt-1">
-                Gerencie usuários do sistema, taxas de entrega por distância (km), mapa da loja, horários, maquininhas e dados da marca.
-              </p>
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-lg font-black text-slate-800 flex items-center gap-2">
+                  <Settings className="h-5 w-5 text-brand-green" />
+                  <span>Configurações do Sistema e Entrega</span>
+                </h3>
+                <p className="text-slate-500 text-xs mt-1">
+                  Gerencie usuários do sistema, taxas de entrega por distância (km), mapa da loja, horários, maquininhas e dados da marca.
+                </p>
+              </div>
+
+              {/* Version & Last Update Header Badge */}
+              <div className="flex flex-wrap items-center gap-2.5 bg-slate-50 border border-slate-200/90 px-3.5 py-2 rounded-xl shrink-0 self-start md:self-auto shadow-2xs">
+                <div className="flex items-center gap-1.5 text-xs font-black text-slate-800">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Versão:</span>
+                  <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-mono text-xs font-black border border-emerald-200/60">
+                    {APP_VERSION_LABEL}
+                  </span>
+                </div>
+                <span className="text-slate-300">|</span>
+                <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold">
+                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Última Atualização:</span>
+                  <span className="font-extrabold text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-200 text-xs">
+                    {APP_LAST_UPDATE}
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Sub-Tab Selector - Responsive Navigation Bar */}
@@ -5452,6 +5486,18 @@ export default function AdminDashboard({
                 <Info className="h-4 w-4 text-indigo-600" />
                 <span>INFORMAÇÕES</span>
               </button>
+              <button
+                type="button"
+                onClick={() => setSettingsSubTab('system')}
+                className={`px-3 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap flex-grow sm:flex-grow-0 ${
+                  settingsSubTab === 'system'
+                    ? 'bg-white text-slate-900 shadow-xs border border-slate-200 font-black'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/50'
+                }`}
+              >
+                <Cpu className="h-4 w-4 text-teal-600" />
+                <span>SISTEMA & VERSÃO</span>
+              </button>
             </div>
           </div>
 
@@ -5539,28 +5585,6 @@ export default function AdminDashboard({
                       />
                     </div>
                   </div>
-                </div>
-
-                {/* Store Location Map */}
-                <div className="pt-2">
-                  <label className="text-xs font-bold text-slate-700 uppercase block mb-1">
-                    Mapa de Ajuste do Ponto da Loja:
-                  </label>
-                  <DeliveryMapPicker
-                    initialLat={deliveryConfig.storeLat}
-                    initialLng={deliveryConfig.storeLng}
-                    initialAddress={deliveryConfig.storeAddress}
-                    isStorePicker={true}
-                    height="280px"
-                    onLocationSelect={(loc) => {
-                      setDeliveryConfig(prev => ({
-                        ...prev,
-                        storeLat: loc.lat,
-                        storeLng: loc.lng,
-                        ...(loc.address ? { storeAddress: loc.address } : {})
-                      }));
-                    }}
-                  />
                 </div>
               </div>
 
@@ -7127,6 +7151,24 @@ export default function AdminDashboard({
                   </div>
                 )}
 
+                {/* System Version & Last Update Info Banner */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span className="font-extrabold text-slate-700">Versão do Sistema:</span>
+                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-mono font-black rounded-md border border-emerald-200">
+                      {APP_VERSION_LABEL}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-3.5 w-3.5 text-slate-500" />
+                    <span className="font-semibold text-slate-600">Data da Última Atualização:</span>
+                    <span className="font-extrabold text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-200">
+                      {APP_LAST_UPDATE} ({APP_LAST_UPDATE_TIME})
+                    </span>
+                  </div>
+                </div>
+
                 <form onSubmit={handleSaveStoreInfo} className="space-y-6">
                   {/* Toggle Show on Home Page */}
                   <div className="bg-indigo-50/60 border border-indigo-200/80 p-4 rounded-2xl flex items-center justify-between gap-4">
@@ -7346,6 +7388,143 @@ export default function AdminDashboard({
                     </button>
                   </div>
                 </form>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 8: SISTEMA & VERSÃO */}
+          {settingsSubTab === 'system' && (
+            <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Main Version Hero Card */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                  <div className="flex items-center gap-3">
+                    <div className="p-3 bg-teal-50 text-teal-700 rounded-2xl border border-teal-100 shrink-0">
+                      <Cpu className="h-7 w-7" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h4 className="font-black text-slate-900 text-lg">Bagô Food & Delivery</h4>
+                        <span className="px-2.5 py-0.5 bg-emerald-100 text-emerald-800 text-xs font-black rounded-lg border border-emerald-200">
+                          {APP_VERSION_LABEL}
+                        </span>
+                        <span className="px-2 py-0.5 bg-teal-50 text-teal-700 text-[11px] font-bold rounded-md border border-teal-200">
+                          Estável
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Plataforma completa de Ponto de Venda (PDV), Atendimento Balcão, Cozinha KDS e Delivery.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => window.location.reload()}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold rounded-xl border border-slate-200 transition-all flex items-center gap-2 cursor-pointer shrink-0 active:scale-95"
+                    title="Recarrega a aplicação para aplicar eventuais atualizações pendentes"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 text-slate-500" />
+                    <span>Recarregar Sistema</span>
+                  </button>
+                </div>
+
+                {/* Key Version & Update Stats Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-5">
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Versão Atual
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-base font-black text-slate-900">{APP_VERSION_LABEL}</span>
+                      <span className="text-[11px] text-emerald-600 font-bold bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                        Ativa
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 mt-1 block">Release: {APP_RELEASE_NAME}</span>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Última Atualização
+                    </span>
+                    <div className="flex items-center gap-1.5 text-slate-900">
+                      <Calendar className="h-4 w-4 text-indigo-600" />
+                      <span className="font-extrabold text-base">{APP_LAST_UPDATE}</span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 mt-1 block">Horário: {APP_LAST_UPDATE_TIME}</span>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Status dos Serviços
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                      </span>
+                      <span className="font-extrabold text-slate-900 text-sm">Operacional</span>
+                    </div>
+                    <span className="text-[11px] text-emerald-700 font-medium mt-1 block">Tempo real ativo (SSE)</span>
+                  </div>
+
+                  <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-200/80">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">
+                      Banco de Dados & Servidor
+                    </span>
+                    <div className="flex items-center gap-1.5 text-slate-900">
+                      <Server className="h-4 w-4 text-emerald-600" />
+                      <span className="font-extrabold text-sm">MySQL Relacional</span>
+                    </div>
+                    <span className="text-[11px] text-slate-500 mt-1 block">Porta 3000 (Produção)</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Release Highlights / Changelog Card */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-amber-500" />
+                    <span>Destaques e Melhorias da Versão ({APP_VERSION_LABEL})</span>
+                  </h4>
+                  <span className="text-xs text-slate-500 font-medium">Publicado em {APP_LAST_UPDATE}</span>
+                </div>
+
+                <div className="space-y-2.5">
+                  {APP_CHANGELOG_HIGHLIGHTS.map((item, idx) => (
+                    <div key={idx} className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <CheckCircle className="h-4 w-4 text-brand-green shrink-0 mt-0.5" />
+                      <p className="text-xs text-slate-700 font-medium leading-relaxed">
+                        {item}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Technical System Overview */}
+              <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
+                <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-2 border-b border-slate-100 pb-3">
+                  <Server className="h-4 w-4 text-indigo-600" />
+                  <span>Informações Técnicas de Ambiente e Implantação</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 text-xs">
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
+                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Ambiente de Execução</span>
+                    <span className="font-extrabold text-slate-800 text-xs mt-0.5 block">Docker / Easypanel / Cloud</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
+                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Porta Primária de Ingress</span>
+                    <span className="font-extrabold text-slate-800 text-xs mt-0.5 block">Porta 3000 (HTTP / SSE)</span>
+                  </div>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/70">
+                    <span className="text-slate-400 font-bold block text-[10px] uppercase">Persistência</span>
+                    <span className="font-extrabold text-slate-800 text-xs mt-0.5 block">MySQL Transacional (InnoDB)</span>
+                  </div>
+                </div>
               </div>
             </div>
           )}
