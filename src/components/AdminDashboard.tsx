@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   TrendingUp, 
   Package, 
@@ -344,8 +344,9 @@ export default function AdminDashboard({
         const data: DeliveryTableRow[] = await res.json();
         setDeliveriesList(Array.isArray(data) ? data : []);
       }
-    } catch (err) {
-      console.error('Erro ao carregar tabela de entregas:', err);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      console.warn('Aviso ao carregar tabela de entregas:', err?.message || err);
     } finally {
       setLoadingDeliveries(false);
     }
@@ -700,8 +701,9 @@ export default function AdminDashboard({
         const data = await res.json();
         setUsersList(data);
       }
-    } catch (err) {
-      console.error('Erro ao carregar usuários:', err);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') return;
+      console.warn('Aviso ao carregar usuários:', err?.message || err);
     } finally {
       setLoadingUsers(false);
     }
@@ -1023,8 +1025,16 @@ export default function AdminDashboard({
   const [soldProductsSearch, setSoldProductsSearch] = useState<string>('');
   const [soldProductsCategoryFilter, setSoldProductsCategoryFilter] = useState<string>('all');
 
+  const reportAbortControllerRef = useRef<AbortController | null>(null);
+
   // Fetch report data
-  const fetchReport = async () => {
+  const fetchReport = useCallback(async (isRetry = false) => {
+    if (reportAbortControllerRef.current) {
+      reportAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    reportAbortControllerRef.current = controller;
+
     setLoading(true);
     try {
       let url = `/api/reports/sales?role=admin`;
@@ -1033,21 +1043,43 @@ export default function AdminDashboard({
       if (reportStartHour) url += `&startHour=${reportStartHour}`;
       if (reportEndHour) url += `&endHour=${reportEndHour}`;
       if (reportSelectedUser && reportSelectedUser !== 'all') url += `&seller=${encodeURIComponent(reportSelectedUser)}`;
-      const res = await fetch(url);
+      
+      const res = await fetch(url, { signal: controller.signal });
       if (res.ok) {
         const data = await res.json();
         setReport(data);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        console.warn('[AdminDashboard] Resposta não-OK ao buscar relatório:', errData?.error || res.statusText);
       }
-    } catch (err) {
-      console.error('Erro ao buscar dados do relatório:', err);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        // Requisição anterior cancelada propositalmente por nova busca ou desmontagem
+        return;
+      }
+      // Se houver instabilidade momentânea ou reinício do servidor, tenta novamente uma vez
+      if (!isRetry) {
+        setTimeout(() => {
+          fetchReport(true);
+        }, 1000);
+        return;
+      }
+      console.warn('[AdminDashboard] Aviso ao buscar dados do relatório:', err?.message || err);
     } finally {
-      setLoading(false);
+      if (reportAbortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
-  };
+  }, [reportStartDate, reportEndDate, reportStartHour, reportEndHour, reportSelectedUser]);
 
   useEffect(() => {
     fetchReport();
-  }, [ingredients, reportStartDate, reportEndDate, reportStartHour, reportEndHour, reportSelectedUser]);
+    return () => {
+      if (reportAbortControllerRef.current) {
+        reportAbortControllerRef.current.abort();
+      }
+    };
+  }, [fetchReport, ingredients?.length]);
 
   const handleExportSoldProductsPDF = () => {
     if (!report || !report.allSoldProducts) return;
@@ -1414,7 +1446,7 @@ export default function AdminDashboard({
   const [inventoryTab, setInventoryTab] = useState<'pdv' | 'kitchen' | 'all'>('pdv');
 
   // Low stock ingredients list
-  const lowStockIngredients = ingredients.filter(ing => ing.stock <= ing.minStock && ing.id !== 'queijo-nenhum');
+  const lowStockIngredients = ingredients.filter(ing => (ing.trackStock !== false) && ing.stock <= ing.minStock && ing.id !== 'queijo-nenhum');
 
   const categories = [
     { id: 'all', label: 'Todos' },
@@ -1495,7 +1527,7 @@ export default function AdminDashboard({
       return idxA - idxB;
     });
 
-    const tableHeaders = [['Insumo', 'Categoria', 'Estoque', 'Mínimo', 'Unidade', 'Preço Extra', 'Status']];
+    const tableHeaders = [['Insumo', 'Categoria', 'Estoque', 'Mínimo', 'Unidade', 'Preço Extra', 'Status', 'Controle']];
     const tableData: any[] = [];
 
     presentCategories.forEach(catKey => {
@@ -1506,7 +1538,7 @@ export default function AdminDashboard({
       tableData.push([
         {
           content: `CATEGORIA: ${catName.toUpperCase()} (${items.length} ${items.length === 1 ? 'item' : 'itens'})`,
-          colSpan: 7,
+          colSpan: 8,
           styles: {
             fillColor: [241, 245, 249], // slate-100
             textColor: [15, 23, 42],    // slate-900
@@ -1519,7 +1551,7 @@ export default function AdminDashboard({
 
       // Items in this category
       items.forEach(ing => {
-        const isLowStock = ing.stock <= ing.minStock;
+        const isLowStock = (ing.trackStock !== false) && ing.stock <= ing.minStock;
         const subCatStr = ing.subcategory ? ` [Sub: ${ing.subcategory}]` : '';
         const priceStr = ing.category === 'kitchen'
           ? (ing.purchasePrice ? `R$ ${ing.purchasePrice.toFixed(2).replace('.', ',')} (Compra)` : 'R$ 0,00')
@@ -1532,7 +1564,8 @@ export default function AdminDashboard({
           `${ing.minStock}`,
           ing.unit,
           priceStr,
-          isLowStock ? 'Estoque Baixo' : 'OK'
+          ing.trackStock === false ? 'Livre' : (isLowStock ? 'Estoque Baixo' : 'OK'),
+          ing.trackStock !== false ? 'Sim' : 'Não'
         ]);
       });
     });
@@ -2856,6 +2889,7 @@ export default function AdminDashboard({
                   <th className="p-3 w-28">Unidade</th>
                   <th className="p-3 w-28">{inventoryTab === 'kitchen' ? 'Preço Compra' : 'Preço Extra'}</th>
                   <th className="p-3 w-24 text-center">Status</th>
+                  <th className="p-3 w-28 text-center">Controlar Estoque</th>
                   <th className="p-3 min-w-[130px] text-center">Histórico</th>
                   <th className="p-3 w-28 text-center">Pág. Inicial</th>
                   <th className="p-3 min-w-[110px] text-center">Ações</th>
@@ -2863,7 +2897,7 @@ export default function AdminDashboard({
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                 {filteredIngredients.map(ing => {
-                  const isLowStock = ing.stock <= ing.minStock;
+                  const isLowStock = (ing.trackStock !== false) && ing.stock <= ing.minStock;
 
                   return (
                     <tr 
@@ -3048,12 +3082,34 @@ export default function AdminDashboard({
                       {/* Status Badge */}
                       <td className="p-2 text-center align-middle">
                         <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md whitespace-nowrap ${
-                          isLowStock 
-                            ? 'bg-amber-100 text-amber-800 border border-amber-200' 
-                            : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          ing.trackStock === false
+                            ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                            : isLowStock 
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200' 
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                         }`}>
-                          {isLowStock ? '⚠️ Baixo' : '✓ OK'}
+                          {ing.trackStock === false ? '♾️ Livre' : isLowStock ? '⚠️ Baixo' : '✓ OK'}
                         </span>
+                      </td>
+
+                      {/* Opção Controlar Estoque (Ao lado de Status) - Botão Sim/Não igual Pág. Inicial */}
+                      <td className="p-2 text-center align-middle">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onSaveIngredient) {
+                              onSaveIngredient({ ...ing, trackStock: ing.trackStock === false ? true : false });
+                            }
+                          }}
+                          className={`inline-flex items-center justify-center text-[11px] font-black px-2.5 py-1 rounded-xl transition-all cursor-pointer ${
+                            ing.trackStock !== false
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200'
+                              : 'bg-red-100 text-red-800 border border-red-300 hover:bg-red-200'
+                          }`}
+                          title="Clique para alternar o controle de estoque deste insumo (Sim ou Não)"
+                        >
+                          {ing.trackStock !== false ? 'Sim' : 'Não'}
+                        </button>
                       </td>
 
                       {/* Histórico de Compras */}
@@ -3339,6 +3395,38 @@ export default function AdminDashboard({
                           />
                         </>
                       )}
+                    </div>
+                  </div>
+
+                  {/* Campo Controlar Estoque (Sim / Não) */}
+                  <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div>
+                      <span className="text-xs font-extrabold text-slate-800 block">Controlar Estoque?</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Se "Não", as vendas não serão bloqueadas caso o estoque esteja baixo ou zerado.</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingIngredient(prev => prev ? ({ ...prev, trackStock: true }) : null)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          editingIngredient.trackStock !== false
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        Sim
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingIngredient(prev => prev ? ({ ...prev, trackStock: false }) : null)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                          editingIngredient.trackStock === false
+                            ? 'bg-red-600 text-white shadow-xs'
+                            : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        Não
+                      </button>
                     </div>
                   </div>
 

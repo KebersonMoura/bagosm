@@ -233,9 +233,9 @@ export default function PosDashboard({
     const configuredBreadName = cfg?.bread;
     const availableBreads = ingredients.filter(i => (i.category || '').toLowerCase() === 'bread');
     
-    let defaultBread = availableBreads.find(b => configuredBreadName && b.name.toLowerCase() === configuredBreadName.toLowerCase() && Number(b.stock) > 0);
+    let defaultBread = availableBreads.find(b => configuredBreadName && b.name.toLowerCase() === configuredBreadName.toLowerCase() && (b.trackStock === false || Number(b.stock) > 0));
     if (!defaultBread) {
-      defaultBread = availableBreads.find(b => Number(b.stock) > 0) || availableBreads[0];
+      defaultBread = availableBreads.find(b => b.trackStock === false || Number(b.stock) > 0) || availableBreads[0];
     }
     
     setSelectedQuickBreadId(defaultBread ? defaultBread.id : (availableBreads[0]?.id || ''));
@@ -253,7 +253,7 @@ export default function PosDashboard({
       return;
     }
 
-    if (Number(chosenBread.stock) <= 0) {
+    if (chosenBread.trackStock !== false && Number(chosenBread.stock) <= 0) {
       showToast(`Atenção: O pão "${chosenBread.name}" está esgotado no estoque!`, 'alert');
       return;
     }
@@ -6604,7 +6604,7 @@ export default function PosDashboard({
                   .filter(i => (i.category || '').toLowerCase() === 'bread')
                   .map(bread => {
                     const isSelected = selectedQuickBreadId === bread.id;
-                    const isOutOfStock = Number(bread.stock) <= 0;
+                    const isOutOfStock = bread.trackStock !== false && Number(bread.stock) <= 0;
                     const hasExtraPrice = Number(bread.price) > 0;
 
                     return (
@@ -6637,6 +6637,15 @@ export default function PosDashboard({
                             <div className="flex items-center gap-1.5 mt-0.5">
                               {isOutOfStock ? (
                                 <span className="text-[10px] font-extrabold text-rose-600">Esgotado</span>
+                              ) : bread.trackStock === false ? (
+                                <>
+                                  <span className="text-[10px] font-bold text-slate-500">
+                                    Estoque: <strong className="text-emerald-700">Livre</strong>
+                                  </span>
+                                  <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                    Incluso
+                                  </span>
+                                </>
                               ) : (
                                 <>
                                   <span className={`text-[10px] font-bold ${Number(bread.stock) <= 10 ? 'text-amber-700' : 'text-slate-500'}`}>

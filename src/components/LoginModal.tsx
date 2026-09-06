@@ -85,7 +85,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Ex: admin ou cozinha"
+              placeholder="Adicione seu usuário."
               className="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-brand-green/20 focus:border-brand-green transition-all text-sm"
               id="login-username-input"
             />

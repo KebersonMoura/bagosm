@@ -2407,7 +2407,7 @@ export default function CustomerSite({
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {breads.map((bread, idx) => {
-                            const isOutOfStock = bread.stock <= 0;
+                            const isOutOfStock = bread.trackStock !== false && bread.stock <= 0;
                             const isSelected = selectedBread === bread.name;
                             return (
                               <button
@@ -2509,7 +2509,7 @@ export default function CustomerSite({
                   <p className="text-xs text-gray-400">Selecione o sabor principal.</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {proteins.map((prot, idx) => {
-                      const isOutOfStock = prot.stock <= 0;
+                      const isOutOfStock = prot.trackStock !== false && prot.stock <= 0;
                       return (
                         <button
                           key={prot.id ? `prot-${prot.id}` : `prot-${prot.name}-${idx}`}
@@ -2571,7 +2571,7 @@ export default function CustomerSite({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {cheeses.map((cheese, idx) => {
-                      const isOutOfStock = cheese.stock <= 0;
+                      const isOutOfStock = cheese.trackStock !== false && cheese.stock <= 0;
                       const status = getOptionStatus({
                         category: 'cheese',
                         itemName: cheese.name,
@@ -2702,7 +2702,7 @@ export default function CustomerSite({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {veggies.map((veg, idx) => {
-                      const isOutOfStock = veg.stock <= 0;
+                      const isOutOfStock = veg.trackStock !== false && veg.stock <= 0;
                       const status = getOptionStatus({
                         category: 'vegetable',
                         itemName: veg.name,
@@ -2780,7 +2780,7 @@ export default function CustomerSite({
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {sauces.map((sauce, idx) => {
-                      const isOutOfStock = sauce.stock <= 0;
+                      const isOutOfStock = sauce.trackStock !== false && sauce.stock <= 0;
                       const status = getOptionStatus({
                         category: 'sauce',
                         itemName: sauce.name,
@@ -2841,7 +2841,7 @@ export default function CustomerSite({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {extras.map((ext, idx) => {
                       const isSelected = selectedExtras.includes(ext.name);
-                      const isOutOfStock = ext.stock <= 0;
+                      const isOutOfStock = ext.trackStock !== false && ext.stock <= 0;
                       return (
                         <button
                           key={ext.id ? `ext-${ext.id}` : `ext-${ext.name}-${idx}`}
@@ -2893,7 +2893,7 @@ export default function CustomerSite({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {drinksAndCookies.map((dc, idx) => {
                       const isSelected = selectedDrinksAndCookies.includes(dc.name);
-                      const isOutOfStock = dc.stock <= 0;
+                      const isOutOfStock = dc.trackStock !== false && dc.stock <= 0;
                       return (
                         <button
                           key={dc.id ? `dc-${dc.id}` : `dc-${dc.name}-${idx}`}

@@ -57,6 +57,11 @@ export async function initDatabaseTables(): Promise<boolean> {
         // Column may already exist
       }
       try {
+        await query(`ALTER TABLE ingredients ADD COLUMN track_stock TINYINT(1) NOT NULL DEFAULT 1`);
+      } catch (e) {
+        // Column may already exist
+      }
+      try {
         await query(`ALTER TABLE ready_products ADD COLUMN subcategory VARCHAR(100) DEFAULT NULL`);
       } catch (e) {
         // Column may already exist
@@ -179,6 +184,7 @@ export async function initDatabaseTables(): Promise<boolean> {
         unit VARCHAR(20) NOT NULL DEFAULT 'unidades',
         price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
         image VARCHAR(500) DEFAULT NULL,
+        track_stock TINYINT(1) NOT NULL DEFAULT 1,
         is_active TINYINT(1) NOT NULL DEFAULT 1
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
@@ -307,7 +313,7 @@ export async function initDatabaseTables(): Promise<boolean> {
 export async function dbGetIngredients(): Promise<Ingredient[] | null> {
   try {
     const rows: any[] = await query(`
-      SELECT id, name, category, subcategory, purchase_price as purchasePrice, stock, min_stock as minStock, unit, price, image, show_on_home as showOnHome 
+      SELECT id, name, category, subcategory, purchase_price as purchasePrice, stock, min_stock as minStock, unit, price, image, show_on_home as showOnHome, track_stock as trackStock 
       FROM ingredients 
       WHERE is_active = 1
     `);
@@ -323,10 +329,11 @@ export async function dbGetIngredients(): Promise<Ingredient[] | null> {
       unit: r.unit,
       price: Number(r.price),
       image: r.image || '',
-      showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true
+      showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true,
+      trackStock: r.trackStock !== undefined && r.trackStock !== null ? Boolean(r.trackStock) : true
     }));
   } catch (err) {
-    // Fallback if subcategory/purchase_price columns don't exist yet on older schema
+    // Fallback if subcategory/purchase_price/track_stock columns don't exist yet on older schema
     try {
       const rows: any[] = await query(`
         SELECT id, name, category, stock, min_stock as minStock, unit, price, image, show_on_home as showOnHome 
@@ -343,7 +350,8 @@ export async function dbGetIngredients(): Promise<Ingredient[] | null> {
         unit: r.unit,
         price: Number(r.price),
         image: r.image || '',
-        showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true
+        showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true,
+        trackStock: true
       }));
     } catch {
       return null;
@@ -353,10 +361,11 @@ export async function dbGetIngredients(): Promise<Ingredient[] | null> {
 
 export async function dbSaveIngredient(ing: Ingredient): Promise<boolean> {
   const showOnHomeVal = ing.showOnHome !== false ? 1 : 0;
+  const trackStockVal = ing.trackStock !== false ? 1 : 0;
   try {
     await query(`
-      INSERT INTO ingredients (id, name, category, subcategory, purchase_price, stock, min_stock, unit, price, image, show_on_home)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ingredients (id, name, category, subcategory, purchase_price, stock, min_stock, unit, price, image, show_on_home, track_stock)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         category = VALUES(category),
@@ -367,29 +376,50 @@ export async function dbSaveIngredient(ing: Ingredient): Promise<boolean> {
         unit = VALUES(unit),
         price = VALUES(price),
         image = VALUES(image),
-        show_on_home = VALUES(show_on_home)
-    `, [ing.id, ing.name, ing.category, ing.subcategory || null, ing.purchasePrice || 0, ing.stock, ing.minStock, ing.unit, ing.price, ing.image || '', showOnHomeVal]);
+        show_on_home = VALUES(show_on_home),
+        track_stock = VALUES(track_stock)
+    `, [ing.id, ing.name, ing.category, ing.subcategory || null, ing.purchasePrice || 0, ing.stock, ing.minStock, ing.unit, ing.price, ing.image || '', showOnHomeVal, trackStockVal]);
     return true;
   } catch (err) {
-    // Fallback without subcategory & purchase_price
+    // Fallback without track_stock
     try {
       await query(`
-        INSERT INTO ingredients (id, name, category, stock, min_stock, unit, price, image, show_on_home)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ingredients (id, name, category, subcategory, purchase_price, stock, min_stock, unit, price, image, show_on_home)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           name = VALUES(name),
           category = VALUES(category),
+          subcategory = VALUES(subcategory),
+          purchase_price = VALUES(purchase_price),
           stock = VALUES(stock),
           min_stock = VALUES(min_stock),
           unit = VALUES(unit),
           price = VALUES(price),
           image = VALUES(image),
           show_on_home = VALUES(show_on_home)
-      `, [ing.id, ing.name, ing.category, ing.stock, ing.minStock, ing.unit, ing.price, ing.image || '', showOnHomeVal]);
+      `, [ing.id, ing.name, ing.category, ing.subcategory || null, ing.purchasePrice || 0, ing.stock, ing.minStock, ing.unit, ing.price, ing.image || '', showOnHomeVal]);
       return true;
-    } catch (e) {
-      console.warn('[MySQL] Error saving ingredient:', e);
-      return false;
+    } catch (err2) {
+      // Fallback without subcategory & purchase_price
+      try {
+        await query(`
+          INSERT INTO ingredients (id, name, category, stock, min_stock, unit, price, image, show_on_home)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            name = VALUES(name),
+            category = VALUES(category),
+            stock = VALUES(stock),
+            min_stock = VALUES(min_stock),
+            unit = VALUES(unit),
+            price = VALUES(price),
+            image = VALUES(image),
+            show_on_home = VALUES(show_on_home)
+        `, [ing.id, ing.name, ing.category, ing.stock, ing.minStock, ing.unit, ing.price, ing.image || '', showOnHomeVal]);
+        return true;
+      } catch (e) {
+        console.warn('[MySQL] Error saving ingredient:', e);
+        return false;
+      }
     }
   }
 }

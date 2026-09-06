@@ -167,6 +167,7 @@ export interface Ingredient {
   price: number; // Base or additional price (usado para cobrança extra no PDV)
   image?: string;
   showOnHome?: boolean;
+  trackStock?: boolean; // Controlar ou não o estoque (se false, vendas liberadas mesmo se estoque baixo/zerado)
 }
 
 export type CustomerType = 'cliente' | 'funcionario';

@@ -555,6 +555,11 @@ async function startServer() {
     }
   });
 
+  // Health check endpoint
+  app.get('/api/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
   // MySQL DB Status Endpoint
   app.get('/api/db/status', (req, res) => {
     const status = getDbStatus();
@@ -1084,7 +1089,8 @@ async function startServer() {
         minStock: Number(ingredient.minStock),
         price: Number(ingredient.price),
         image: ingredient.image !== undefined ? ingredient.image : ingredients[existingIndex].image,
-        showOnHome: ingredient.showOnHome !== undefined ? Boolean(ingredient.showOnHome) : (ingredients[existingIndex].showOnHome !== false)
+        showOnHome: ingredient.showOnHome !== undefined ? Boolean(ingredient.showOnHome) : (ingredients[existingIndex].showOnHome !== false),
+        trackStock: ingredient.trackStock !== undefined ? Boolean(ingredient.trackStock) : (ingredients[existingIndex].trackStock !== false)
       };
       ingredients[existingIndex] = targetIng;
     } else {
@@ -1099,7 +1105,8 @@ async function startServer() {
         unit: ingredient.unit || 'porções',
         price: Number(ingredient.price) || 0,
         image: ingredient.image || '',
-        showOnHome: ingredient.showOnHome !== undefined ? Boolean(ingredient.showOnHome) : true
+        showOnHome: ingredient.showOnHome !== undefined ? Boolean(ingredient.showOnHome) : true,
+        trackStock: ingredient.trackStock !== undefined ? Boolean(ingredient.trackStock) : true
       };
       ingredients.push(targetIng);
     }
@@ -2768,7 +2775,7 @@ async function startServer() {
 
       // 2) Low Stock Alert
       const lowStockIngredients = (ingredients || [])
-        .filter(ing => ing.stock <= (ing.minStock !== undefined ? ing.minStock : 5))
+        .filter(ing => (ing.trackStock !== false) && ing.stock <= (ing.minStock !== undefined ? ing.minStock : 5))
         .map(ing => ({
           id: ing.id,
           name: ing.name,
