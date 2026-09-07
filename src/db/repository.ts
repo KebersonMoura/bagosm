@@ -72,6 +72,31 @@ export async function initDatabaseTables(): Promise<boolean> {
         // Column may already exist
       }
       try {
+        await query(`ALTER TABLE ready_products ADD COLUMN is_combo TINYINT(1) NOT NULL DEFAULT 0`);
+      } catch (e) {
+        // Column may already exist
+      }
+      try {
+        await query(`ALTER TABLE ready_products ADD COLUMN combo_items_json JSON DEFAULT NULL`);
+      } catch (e) {
+        // Column may already exist
+      }
+      try {
+        await query(`ALTER TABLE ready_products ADD COLUMN show_in_combo_section TINYINT(1) NOT NULL DEFAULT 0`);
+      } catch (e) {
+        // Column may already exist
+      }
+      try {
+        await query(`ALTER TABLE ready_products ADD COLUMN skip_ingredients TINYINT(1) NOT NULL DEFAULT 0`);
+      } catch (e) {
+        // Column may already exist
+      }
+      try {
+        await query(`ALTER TABLE ready_products MODIFY COLUMN display_section VARCHAR(50) NOT NULL DEFAULT 'cardapio'`);
+      } catch (e) {
+        // Column may already be varchar
+      }
+      try {
         await query(`ALTER TABLE orders MODIFY COLUMN code VARCHAR(50) NOT NULL`);
       } catch (e) {
         // Column may already exist
@@ -244,9 +269,14 @@ export async function initDatabaseTables(): Promise<boolean> {
         image VARCHAR(500) DEFAULT NULL,
         category VARCHAR(50) NOT NULL DEFAULT 'sandwich',
         subcategory VARCHAR(100) DEFAULT NULL,
-        display_section ENUM('destaques', 'promocao', 'cardapio', 'all') NOT NULL DEFAULT 'cardapio',
+        display_section VARCHAR(50) NOT NULL DEFAULT 'cardapio',
         linked_ingredient_id VARCHAR(50) DEFAULT NULL,
-        sandwich_config_json JSON DEFAULT NULL
+        sandwich_config_json JSON DEFAULT NULL,
+        show_on_home TINYINT(1) NOT NULL DEFAULT 1,
+        is_combo TINYINT(1) NOT NULL DEFAULT 0,
+        combo_items_json JSON DEFAULT NULL,
+        show_in_combo_section TINYINT(1) NOT NULL DEFAULT 0,
+        skip_ingredients TINYINT(1) NOT NULL DEFAULT 0
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
 
@@ -481,7 +511,10 @@ export async function dbGetReadyProducts(): Promise<ReadyProduct[] | null> {
              is_popular as isPopular, is_promo as isPromo, badge_text as badgeText, 
              image, category, subcategory, display_section as displaySection, 
              linked_ingredient_id as linkedIngredientId, sandwich_config_json,
-             show_on_home as showOnHome
+             show_on_home as showOnHome,
+             is_combo as isCombo, combo_items_json as comboItemsJson,
+             show_in_combo_section as showInComboSection,
+             skip_ingredients as skipIngredients
       FROM ready_products
     `);
     if (!rows) return null;
@@ -500,15 +533,19 @@ export async function dbGetReadyProducts(): Promise<ReadyProduct[] | null> {
       displaySection: r.displaySection || 'cardapio',
       linkedIngredientId: r.linkedIngredientId || undefined,
       sandwichConfig: r.sandwich_config_json ? (typeof r.sandwich_config_json === 'string' ? JSON.parse(r.sandwich_config_json) : r.sandwich_config_json) : undefined,
-      showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true
+      showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true,
+      isCombo: Boolean(r.isCombo),
+      comboItems: r.comboItemsJson ? (typeof r.comboItemsJson === 'string' ? JSON.parse(r.comboItemsJson) : r.comboItemsJson) : [],
+      showInComboSection: Boolean(r.showInComboSection),
+      skipIngredients: r.skipIngredients !== undefined && r.skipIngredients !== null ? Boolean(r.skipIngredients) : (Boolean(r.isCombo))
     }));
   } catch (err) {
-    // Fallback if subcategory column doesn't exist yet on older schema
+    // Fallback if combo columns don't exist yet on older schema
     try {
       const rows: any[] = await query(`
         SELECT id, name, description, price, original_price as originalPrice, 
                is_popular as isPopular, is_promo as isPromo, badge_text as badgeText, 
-               image, category, display_section as displaySection, 
+               image, category, subcategory, display_section as displaySection, 
                linked_ingredient_id as linkedIngredientId, sandwich_config_json,
                show_on_home as showOnHome
         FROM ready_products
@@ -525,6 +562,7 @@ export async function dbGetReadyProducts(): Promise<ReadyProduct[] | null> {
         badgeText: r.badgeText || undefined,
         image: r.image || '',
         category: r.category || 'sandwich',
+        subcategory: r.subcategory || undefined,
         displaySection: r.displaySection || 'cardapio',
         linkedIngredientId: r.linkedIngredientId || undefined,
         sandwichConfig: r.sandwich_config_json ? (typeof r.sandwich_config_json === 'string' ? JSON.parse(r.sandwich_config_json) : r.sandwich_config_json) : undefined,
@@ -538,10 +576,19 @@ export async function dbGetReadyProducts(): Promise<ReadyProduct[] | null> {
 
 export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
   const showOnHomeVal = prod.showOnHome !== false ? 1 : 0;
+  const isComboVal = prod.isCombo ? 1 : 0;
+  const comboItemsVal = prod.comboItems && prod.comboItems.length > 0 ? JSON.stringify(prod.comboItems) : null;
+  const showInComboSectionVal = prod.showInComboSection ? 1 : 0;
+  const skipIngredientsVal = prod.skipIngredients !== undefined ? (prod.skipIngredients ? 1 : 0) : (prod.isCombo ? 1 : 0);
+
   try {
     await query(`
-      INSERT INTO ready_products (id, name, description, price, original_price, is_popular, is_promo, badge_text, image, category, subcategory, display_section, linked_ingredient_id, sandwich_config_json, show_on_home)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO ready_products (
+        id, name, description, price, original_price, is_popular, is_promo, badge_text, 
+        image, category, subcategory, display_section, linked_ingredient_id, sandwich_config_json, 
+        show_on_home, is_combo, combo_items_json, show_in_combo_section, skip_ingredients
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         description = VALUES(description),
@@ -556,7 +603,11 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
         display_section = VALUES(display_section),
         linked_ingredient_id = VALUES(linked_ingredient_id),
         sandwich_config_json = VALUES(sandwich_config_json),
-        show_on_home = VALUES(show_on_home)
+        show_on_home = VALUES(show_on_home),
+        is_combo = VALUES(is_combo),
+        combo_items_json = VALUES(combo_items_json),
+        show_in_combo_section = VALUES(show_in_combo_section),
+        skip_ingredients = VALUES(skip_ingredients)
     `, [
       prod.id,
       prod.name,
@@ -572,15 +623,19 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
       prod.displaySection || 'cardapio',
       prod.linkedIngredientId || null,
       prod.sandwichConfig ? JSON.stringify(prod.sandwichConfig) : null,
-      showOnHomeVal
+      showOnHomeVal,
+      isComboVal,
+      comboItemsVal,
+      showInComboSectionVal,
+      skipIngredientsVal
     ]);
     return true;
   } catch (err) {
-    // Fallback without subcategory column
+    // Fallback without combo columns
     try {
       await query(`
-        INSERT INTO ready_products (id, name, description, price, original_price, is_popular, is_promo, badge_text, image, category, display_section, linked_ingredient_id, sandwich_config_json, show_on_home)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ready_products (id, name, description, price, original_price, is_popular, is_promo, badge_text, image, category, subcategory, display_section, linked_ingredient_id, sandwich_config_json, show_on_home)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           name = VALUES(name),
           description = VALUES(description),
@@ -591,6 +646,7 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
           badge_text = VALUES(badge_text),
           image = VALUES(image),
           category = VALUES(category),
+          subcategory = VALUES(subcategory),
           display_section = VALUES(display_section),
           linked_ingredient_id = VALUES(linked_ingredient_id),
           sandwich_config_json = VALUES(sandwich_config_json),
@@ -606,6 +662,7 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
         prod.badgeText || null,
         prod.image || '',
         prod.category || 'sandwich',
+        prod.subcategory || null,
         prod.displaySection || 'cardapio',
         prod.linkedIngredientId || null,
         prod.sandwichConfig ? JSON.stringify(prod.sandwichConfig) : null,
@@ -613,7 +670,7 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
       ]);
       return true;
     } catch (e) {
-      console.warn('[MySQL] Error saving ready product:', e);
+      console.error('[MySQL Repository] Failed to save ready product:', e);
       return false;
     }
   }

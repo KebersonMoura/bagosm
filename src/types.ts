@@ -137,6 +137,15 @@ export interface CustomizerStep {
   options?: StepOption[];
 }
 
+export interface ComboItem {
+  id: string;
+  name: string;
+  category?: string;
+  quantity?: number;
+  price?: number;
+  image?: string;
+}
+
 export interface ReadyProduct {
   id: string;
   name: string;
@@ -147,12 +156,17 @@ export interface ReadyProduct {
   isPromo?: boolean;
   badgeText?: string;
   image?: string;
-  category: 'sandwich' | 'salad' | 'addon' | 'drink' | 'cookie' | 'other' | string;
+  category: 'sandwich' | 'salad' | 'addon' | 'drink' | 'cookie' | 'combo' | 'other' | string;
   subcategory?: string; // Subcategoria para produtos prontos (ex: Combos, Sucos Naturais, Artesanais, Refrigerantes Lata)
-  displaySection?: 'destaques' | 'promocao' | 'cardapio' | 'all' | string;
+  displaySection?: 'destaques' | 'promocao' | 'cardapio' | 'combo' | 'all' | string;
   linkedIngredientId?: string;
   sandwichConfig?: CustomSandwich;
   showOnHome?: boolean;
+  // Combo fields:
+  isCombo?: boolean;
+  comboItems?: ComboItem[];
+  showInComboSection?: boolean; // Opção de aparecer em destaque na página inicial chamado "combo"
+  skipIngredients?: boolean; // Já deve ir direto para fechamento não deve ter escolha de insumos
 }
 
 export interface Ingredient {

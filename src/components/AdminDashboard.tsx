@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   TrendingUp, 
   Package, 
@@ -1006,6 +1006,75 @@ export default function AdminDashboard({
   const [photoModalReadyProduct, setPhotoModalReadyProduct] = useState<ReadyProduct | null>(null);
   const [readyProductPhotoUrlInput, setReadyProductPhotoUrlInput] = useState<string>('');
 
+  // States for Combo management
+  const [comboItemSearch, setComboItemSearch] = useState<string>('');
+  const [comboCategoryFilter, setComboCategoryFilter] = useState<string>('all');
+
+  // List of beverages, juices, vitamins and addons available to assemble a combo
+  const availableComboSourceItems = useMemo(() => {
+    const list: Array<{
+      id: string;
+      name: string;
+      category: string;
+      price: number;
+      image?: string;
+      type: 'juice' | 'vitamin' | 'drink' | 'addon' | 'other';
+    }> = [];
+
+    // 1. From ingredients
+    ingredients.forEach(ing => {
+      const cat = (ing.category || '').toLowerCase();
+      const name = (ing.name || '').toLowerCase();
+      const subcat = (ing.subcategory || '').toLowerCase();
+
+      let type: 'juice' | 'vitamin' | 'drink' | 'addon' | 'other' = 'other';
+      if (cat === 'juice' || subcat.includes('suco') || name.includes('suco')) {
+        type = 'juice';
+      } else if (cat === 'vitamin' || subcat.includes('vitamina') || name.includes('vitamina') || name.includes('shake')) {
+        type = 'vitamin';
+      } else if (cat === 'drink_cookie' || cat === 'drink' || name.includes('agua') || name.includes('água') || name.includes('coca') || name.includes('guarana') || name.includes('refrigerante') || subcat.includes('bebida')) {
+        type = 'drink';
+      } else if (cat === 'extra' || cat === 'addon' || subcat.includes('acompanhamento') || name.includes('batata') || name.includes('cookie')) {
+        type = 'addon';
+      }
+
+      if (type !== 'other' || cat === 'drink_cookie' || cat === 'extra') {
+        list.push({
+          id: `ing-${ing.id}`,
+          name: ing.name,
+          category: ing.category,
+          price: ing.price || 0,
+          image: ing.image,
+          type
+        });
+      }
+    });
+
+    // 2. From ready products that are drinks, cookies or addons
+    (readyProducts || []).forEach(rp => {
+      if (rp.category === 'drink' || rp.category === 'cookie' || rp.category === 'addon') {
+        const name = (rp.name || '').toLowerCase();
+        let type: 'juice' | 'vitamin' | 'drink' | 'addon' | 'other' = 'drink';
+        if (name.includes('suco')) type = 'juice';
+        else if (name.includes('vitamina')) type = 'vitamin';
+        else if (rp.category === 'addon' || rp.category === 'cookie') type = 'addon';
+
+        if (!list.some(l => l.name.toLowerCase() === rp.name.toLowerCase())) {
+          list.push({
+            id: `rp-${rp.id}`,
+            name: rp.name,
+            category: rp.category,
+            price: rp.price || 0,
+            image: rp.image,
+            type
+          });
+        }
+      }
+    });
+
+    return list;
+  }, [ingredients, readyProducts]);
+
   // Helper to get today's date string formatted as YYYY-MM-DD
   const getTodayDateStr = () => {
     const d = new Date();
@@ -1608,12 +1677,15 @@ export default function AdminDashboard({
   };
 
   const filteredReadyProducts = readyProducts.filter(p => {
-    const matchesCat = readyProductsCategory === 'all' || p.category === readyProductsCategory;
+    const matchesCat = readyProductsCategory === 'all' || 
+      p.category === readyProductsCategory || 
+      (readyProductsCategory === 'combo' && (p.isCombo || p.showInComboSection || p.category === 'combo'));
     const matchesSubCat = readyProductsSubcategory === 'all' || p.subcategory === readyProductsSubcategory;
     const matchesSearch = !readyProductsSearch || 
       p.name.toLowerCase().includes(readyProductsSearch.toLowerCase()) ||
       p.description.toLowerCase().includes(readyProductsSearch.toLowerCase()) ||
-      (p.subcategory && p.subcategory.toLowerCase().includes(readyProductsSearch.toLowerCase()));
+      (p.subcategory && p.subcategory.toLowerCase().includes(readyProductsSearch.toLowerCase())) ||
+      (p.comboItems && p.comboItems.some(ci => ci.name.toLowerCase().includes(readyProductsSearch.toLowerCase())));
     return matchesCat && matchesSubCat && matchesSearch;
   });
 
@@ -4396,6 +4468,7 @@ export default function AdminDashboard({
                 <option value="addon">🍟 Adicionais</option>
                 <option value="drink">🥤 Bebidas</option>
                 <option value="cookie">🍪 Cookies</option>
+                <option value="combo">🍟🥤 Combos</option>
                 <option value="other">📦 Outros</option>
                 {Array.from(new Set(readyProducts.map(p => p.category)))
                   .filter(c => Boolean(c) && !['sandwich', 'salad', 'addon', 'drink', 'cookie', 'other'].includes(c))
@@ -4435,6 +4508,10 @@ export default function AdminDashboard({
                     displaySection: 'destaques',
                     isPopular: true,
                     showOnHome: true,
+                    isCombo: false,
+                    comboItems: [],
+                    showInComboSection: false,
+                    skipIngredients: false,
                     sandwichConfig: {
                       bread: '',
                       size: '15cm',
@@ -4634,7 +4711,7 @@ export default function AdminDashboard({
                     <span className="text-[10px] font-bold text-slate-500">Marque as seções desejadas</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Checkbox Destaque */}
                     <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
                       editingProduct.isPopular || editingProduct.displaySection === 'destaques' || editingProduct.displaySection === 'all'
@@ -4656,7 +4733,7 @@ export default function AdminDashboard({
                       />
                       <div>
                         <span className="text-xs font-black block">⭐ Em Destaque</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe no topo principal da Página Inicial em "Destaques".</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe no topo da Página Inicial em "Destaques".</span>
                       </div>
                     </label>
 
@@ -4681,7 +4758,34 @@ export default function AdminDashboard({
                       />
                       <div>
                         <span className="text-xs font-black block">🔥 Promoção</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe no bloco especial de Ofertas e Promoções.</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe no bloco especial de Promoções.</span>
+                      </div>
+                    </label>
+
+                    {/* Checkbox Destaque "Combo" */}
+                    <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                      editingProduct.showInComboSection || editingProduct.displaySection === 'combo'
+                        ? 'bg-purple-100/80 border-purple-400 text-purple-950 font-bold shadow-2xs'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editingProduct.showInComboSection || editingProduct.displaySection === 'combo')}
+                        onChange={(e) => {
+                          const isChecked = e.target.checked;
+                          setEditingProduct(prev => ({
+                            ...prev,
+                            showInComboSection: isChecked,
+                            isCombo: isChecked ? true : prev?.isCombo,
+                            skipIngredients: isChecked ? true : prev?.skipIngredients,
+                            displaySection: isChecked ? 'combo' : (prev?.isPopular ? 'destaques' : 'cardapio')
+                          }));
+                        }}
+                        className="mt-0.5 rounded border-purple-400 text-purple-600 focus:ring-purple-500"
+                      />
+                      <div>
+                        <span className="text-xs font-black block">🍟🥤 Destaque "Combo"</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe na vitrine de destaque "Combo" na Home.</span>
                       </div>
                     </label>
 
@@ -4705,7 +4809,7 @@ export default function AdminDashboard({
                       />
                       <div>
                         <span className="text-xs font-black block">📖 Nosso Cardápio</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe na listagem geral e por categoria no cardápio.</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe na listagem geral do cardápio.</span>
                       </div>
                     </label>
                   </div>
@@ -4738,6 +4842,311 @@ export default function AdminDashboard({
                       />
                     </div>
                   </div>
+                </div>
+
+                {/* CONFIGURADOR DE COMBO (BEBIDAS, SUCOS, VITAMINAS E MAIS) */}
+                <div className="md:col-span-2 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-amber-500/15 p-5 rounded-2xl border-2 border-amber-300/80 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="h-10 w-10 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center text-xl font-black shadow-xs shrink-0">
+                        🍟🥤
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h5 className="font-black text-slate-900 text-sm uppercase tracking-tight">
+                            Formação de Combo (Bebidas, Sucos, Vitaminas, etc.)
+                          </h5>
+                          <span className="bg-amber-500 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-md uppercase">
+                            Configuração
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-600 font-medium">
+                          Monte combos com bebidas, sucos ou vitaminas. Ficarão salvos no banco de dados e irão direto para o fechamento.
+                        </p>
+                      </div>
+                    </div>
+
+                    <label className="inline-flex items-center gap-2 cursor-pointer bg-white px-3.5 py-2 rounded-xl border border-amber-300 shadow-2xs">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editingProduct.isCombo)}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setEditingProduct(prev => ({
+                            ...prev,
+                            isCombo: checked,
+                            showInComboSection: checked ? true : prev?.showInComboSection,
+                            skipIngredients: checked ? true : prev?.skipIngredients
+                          }));
+                        }}
+                        className="rounded border-amber-400 text-amber-600 focus:ring-amber-500 h-4 w-4"
+                      />
+                      <span className="text-xs font-black text-slate-800">
+                        Ativar Modo Combo
+                      </span>
+                    </label>
+                  </div>
+
+                  {editingProduct.isCombo ? (
+                    <div className="space-y-4 pt-1 animate-in fade-in duration-200">
+                      {/* Opções de Comportamento do Combo */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {/* Opção 1: Destaque na Página Inicial chamado "Combo" */}
+                        <label className={`p-3.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                          editingProduct.showInComboSection
+                            ? 'bg-amber-100/90 border-amber-400 text-amber-950 font-bold shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(editingProduct.showInComboSection)}
+                            onChange={(e) => setEditingProduct(prev => ({ ...prev, showInComboSection: e.target.checked }))}
+                            className="mt-0.5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
+                          />
+                          <div>
+                            <span className="text-xs font-black block flex items-center gap-1.5">
+                              <span>⭐</span> Destaque na Página Inicial ("Combo")
+                            </span>
+                            <span className="text-[11px] text-slate-600 font-normal leading-tight block mt-0.5">
+                              Exibe em uma vitrine de destaque especial chamada "Combo" no topo da loja virtual.
+                            </span>
+                          </div>
+                        </label>
+
+                        {/* Opção 2: Ir direto para o fechamento (sem escolha de insumos) */}
+                        <label className={`p-3.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                          editingProduct.skipIngredients
+                            ? 'bg-emerald-100/90 border-emerald-400 text-emerald-950 font-bold shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(editingProduct.skipIngredients)}
+                            onChange={(e) => setEditingProduct(prev => ({ ...prev, skipIngredients: e.target.checked }))}
+                            className="mt-0.5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
+                          />
+                          <div>
+                            <span className="text-xs font-black block flex items-center gap-1.5">
+                              <span>⚡</span> Direto p/ Fechamento (Sem Insumos)
+                            </span>
+                            <span className="text-[11px] text-slate-600 font-normal leading-tight block mt-0.5">
+                              O cliente clica e vai direto confirmar dados e pagamento, sem passar pela montagem de insumos.
+                            </span>
+                          </div>
+                        </label>
+                      </div>
+
+                      {/* Itens Atualmente Selecionados no Combo */}
+                      <div className="bg-white p-4 rounded-xl border border-amber-200 shadow-2xs space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                          <span className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
+                            <span>📋</span> Bebidas / Itens Inclusos no Combo ({editingProduct.comboItems?.length || 0})
+                          </span>
+
+                          {editingProduct.comboItems && editingProduct.comboItems.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const comboDesc = `Combo acompanha: ${editingProduct.comboItems!.map(i => `${i.quantity || 1}x ${i.name}`).join(' + ')}`;
+                                setEditingProduct(prev => ({
+                                  ...prev,
+                                  description: prev?.description ? `${prev.description} | ${comboDesc}` : comboDesc
+                                }));
+                              }}
+                              className="text-[11px] font-bold text-amber-800 hover:text-amber-900 bg-amber-100 hover:bg-amber-200 px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 cursor-pointer"
+                              title="Copiar itens inclusos para a descrição do produto"
+                            >
+                              <span>✍️ Gerar Texto p/ Descrição</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {(!editingProduct.comboItems || editingProduct.comboItems.length === 0) ? (
+                          <div className="py-6 text-center text-xs text-slate-400 font-medium">
+                            Nenhum item adicionado ao combo ainda. Selecione bebidas, sucos ou vitaminas abaixo! 👇
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                            {editingProduct.comboItems.map((item, idx) => (
+                              <div
+                                key={`${item.id}-${idx}`}
+                                className="flex items-center justify-between gap-2 p-2.5 bg-amber-50/70 border border-amber-200 rounded-xl"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <span className="text-xs font-bold text-slate-900 block truncate" title={item.name}>
+                                    {item.name}
+                                  </span>
+                                  <span className="text-[10px] text-amber-800 font-semibold">
+                                    {item.category || 'Bebida/Insumo'}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <div className="flex items-center bg-white border border-amber-300 rounded-lg overflow-hidden">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingProduct(prev => {
+                                          const current = [...(prev?.comboItems || [])];
+                                          if (current[idx].quantity && current[idx].quantity! > 1) {
+                                            current[idx] = { ...current[idx], quantity: current[idx].quantity! - 1 };
+                                          } else {
+                                            current.splice(idx, 1);
+                                          }
+                                          return { ...prev, comboItems: current };
+                                        });
+                                      }}
+                                      className="px-2 py-0.5 text-xs font-bold hover:bg-amber-100 text-slate-700 cursor-pointer"
+                                    >
+                                      -
+                                    </button>
+                                    <span className="px-2 text-xs font-black text-slate-800">
+                                      {item.quantity || 1}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingProduct(prev => {
+                                          const current = [...(prev?.comboItems || [])];
+                                          current[idx] = { ...current[idx], quantity: (current[idx].quantity || 1) + 1 };
+                                          return { ...prev, comboItems: current };
+                                        });
+                                      }}
+                                      className="px-2 py-0.5 text-xs font-bold hover:bg-amber-100 text-slate-700 cursor-pointer"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingProduct(prev => ({
+                                        ...prev,
+                                        comboItems: (prev?.comboItems || []).filter((_, i) => i !== idx)
+                                      }));
+                                    }}
+                                    className="text-red-500 hover:text-red-700 p-1 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                    title="Remover do combo"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Catálogo de Bebidas, Sucos, Vitaminas e etc para Selecionar */}
+                      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                          <span className="text-xs font-black text-slate-800 uppercase tracking-tight flex items-center gap-1.5">
+                            <span>🔍</span> Escolher Bebidas, Sucos, Vitaminas e Acompanhamentos
+                          </span>
+
+                          {/* Tabs / Filtros Rápidos */}
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {[
+                              { id: 'all', label: 'Todos' },
+                              { id: 'juice', label: '🧃 Sucos' },
+                              { id: 'vitamin', label: '🥛 Vitaminas' },
+                              { id: 'drink', label: '🥤 Bebidas/Geladas' },
+                              { id: 'addon', label: '🍟 Acompanhamentos' },
+                            ].map(tab => (
+                              <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setComboCategoryFilter(tab.id)}
+                                className={`text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                                  comboCategoryFilter === tab.id
+                                    ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                }`}
+                              >
+                                {tab.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Campo de Busca Rápida */}
+                        <div className="relative">
+                          <Search className="h-3.5 w-3.5 text-slate-400 absolute left-3 top-2.5" />
+                          <input
+                            type="text"
+                            placeholder="Buscar bebida, suco, vitamina (ex: maracujá, coca, água, vitamina de morango)..."
+                            value={comboItemSearch}
+                            onChange={(e) => setComboItemSearch(e.target.value)}
+                            className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium focus:outline-hidden focus:ring-1 focus:ring-amber-500"
+                          />
+                        </div>
+
+                        {/* Grade de Itens Disponíveis para Adicionar */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 max-h-56 overflow-y-auto pr-1">
+                          {availableComboSourceItems
+                            .filter(item => {
+                              const matchesTab = comboCategoryFilter === 'all' || item.type === comboCategoryFilter;
+                              const matchesSearch = !comboItemSearch || 
+                                item.name.toLowerCase().includes(comboItemSearch.toLowerCase()) ||
+                                item.category.toLowerCase().includes(comboItemSearch.toLowerCase());
+                              return matchesTab && matchesSearch;
+                            })
+                            .map(item => {
+                              const isAlreadyAdded = editingProduct.comboItems?.some(ci => ci.name === item.name);
+                              return (
+                                <button
+                                  key={item.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingProduct(prev => {
+                                      const current = [...(prev?.comboItems || [])];
+                                      const foundIndex = current.findIndex(ci => ci.name === item.name);
+                                      if (foundIndex >= 0) {
+                                        current[foundIndex] = { ...current[foundIndex], quantity: (current[foundIndex].quantity || 1) + 1 };
+                                      } else {
+                                        current.push({
+                                          id: item.id,
+                                          name: item.name,
+                                          category: item.category,
+                                          quantity: 1,
+                                          price: item.price,
+                                          image: item.image
+                                        });
+                                      }
+                                      return { ...prev, comboItems: current };
+                                    });
+                                  }}
+                                  className={`p-2 rounded-xl border text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
+                                    isAlreadyAdded
+                                      ? 'bg-amber-50 border-amber-300 text-amber-950 font-bold'
+                                      : 'bg-slate-50/70 border-slate-200 hover:border-amber-300 hover:bg-amber-50/40 text-slate-700'
+                                  }`}
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <span className="text-xs font-bold block truncate" title={item.name}>
+                                      {item.name}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 block">
+                                      R$ {(item.price || 0).toFixed(2).replace('.', ',')}
+                                    </span>
+                                  </div>
+                                  <span className={`h-6 w-6 rounded-lg flex items-center justify-center text-xs font-black shrink-0 ${
+                                    isAlreadyAdded ? 'bg-amber-500 text-slate-950' : 'bg-white border border-slate-200 text-slate-500'
+                                  }`}>
+                                    +
+                                  </span>
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-white/60 p-3 rounded-xl border border-amber-200/50 text-center text-xs text-slate-500">
+                      💡 Marque <strong>"Ativar Modo Combo"</strong> acima para selecionar bebidas, sucos ou vitaminas que acompanham este produto e destacá-lo na Página Inicial.
+                    </div>
+                  )}
                 </div>
 
                 {editingProduct.category === 'sandwich' || editingProduct.category === 'salad' ? (
@@ -4992,7 +5401,14 @@ export default function AdminDashboard({
                   type="button"
                   onClick={() => {
                     if (editingProduct.name && editingProduct.price && onUpdateReadyProduct) {
-                      onUpdateReadyProduct(editingProduct as ReadyProduct);
+                      const payload: ReadyProduct = {
+                        ...(editingProduct as ReadyProduct),
+                        isCombo: Boolean(editingProduct.isCombo),
+                        comboItems: editingProduct.comboItems || [],
+                        showInComboSection: Boolean(editingProduct.showInComboSection),
+                        skipIngredients: Boolean(editingProduct.skipIngredients)
+                      };
+                      onUpdateReadyProduct(payload);
                       setIsEditingProduct(false);
                       setEditingProduct(null);
                     }
@@ -5087,6 +5503,7 @@ export default function AdminDashboard({
                         <option value="drink">Bebida</option>
                         <option value="cookie">Cookie</option>
                         <option value="addon">Adicional</option>
+                        <option value="combo">Combo</option>
                         <option value="other">Outros</option>
                         {!['sandwich', 'salad', 'drink', 'cookie', 'addon', 'other'].includes(prod.category) && (
                           <option value={prod.category}>{prod.category}</option>
@@ -5168,12 +5585,32 @@ export default function AdminDashboard({
                             {prod.badgeText}
                           </span>
                         )}
+                        {prod.isCombo && (
+                          <span className="bg-purple-100 text-purple-950 border border-purple-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                            🍟 Combo
+                          </span>
+                        )}
+                        {prod.showInComboSection && (
+                          <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
+                            ✨ Seção Combo
+                          </span>
+                        )}
+                        {prod.skipIngredients && (
+                          <span className="bg-blue-100 text-blue-900 border border-blue-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
+                            ⚡ Direto
+                          </span>
+                        )}
                       </div>
                     </td>
 
                     {/* Receita / Descrição */}
                     <td className="p-2.5 align-middle text-[11px] text-slate-500">
-                      {prod.sandwichConfig ? (
+                      {prod.comboItems && prod.comboItems.length > 0 ? (
+                        <div className="line-clamp-2">
+                          <span className="font-extrabold text-amber-800">🥤 Combo: </span>
+                          <span className="text-slate-700">{prod.comboItems.map(i => `${i.quantity || 1}x ${i.name}`).join(' + ')}</span>
+                        </div>
+                      ) : prod.sandwichConfig ? (
                         <div className="line-clamp-2">
                           {prod.sandwichConfig.bread && <span><strong>Pão:</strong> {prod.sandwichConfig.bread} | </span>}
                           <span><strong>Recheio:</strong> {prod.sandwichConfig.protein || 'Nenhum'}</span>

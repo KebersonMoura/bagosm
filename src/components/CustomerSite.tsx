@@ -41,7 +41,8 @@ import {
   Phone,
   Store,
   MessageCircle,
-  Navigation
+  Navigation,
+  Zap
 } from 'lucide-react';
 import { Ingredient, CustomSandwich, Order, CustomizerStep, ReadyProduct, StoreInfo } from '../types';
 import { calculateAssemblyExtras, getOptionStatus } from '../utils/assemblyRules';
@@ -630,7 +631,17 @@ export default function CustomerSite({
   };
 
   const handleProductClick = (item: any) => {
-    const isBuildItem = item.category === 'sandwich' || item.category === 'salad' || item.rawReadyProduct?.category === 'sandwich' || item.rawReadyProduct?.category === 'salad';
+    const isCombo = Boolean(
+      item.isCombo || 
+      item.rawReadyProduct?.isCombo || 
+      item.skipIngredients || 
+      item.rawReadyProduct?.skipIngredients ||
+      item.showInComboSection ||
+      item.rawReadyProduct?.showInComboSection ||
+      item.category === 'combo' ||
+      item.rawReadyProduct?.category === 'combo'
+    );
+    const isBuildItem = !isCombo && (item.category === 'sandwich' || item.category === 'salad' || item.rawReadyProduct?.category === 'sandwich' || item.rawReadyProduct?.category === 'salad');
     if (isBuildItem) {
       setBuildModalFormat(item.category === 'salad' || item.rawReadyProduct?.category === 'salad' ? 'salad' : 'sandwich');
       setBuildModalProduct(item.rawReadyProduct || null);
@@ -643,7 +654,11 @@ export default function CustomerSite({
         price: Number(item.price) || 0,
         category: item.category as any,
         image: item.image,
-        isAvailable: true
+        isAvailable: true,
+        isCombo: isCombo,
+        comboItems: item.comboItems || [],
+        skipIngredients: true,
+        showInComboSection: Boolean(item.showInComboSection)
       };
       setQuickBuyProduct(readyProd);
       setQuickBuyQty(1);
@@ -676,8 +691,10 @@ export default function CustomerSite({
     // 1. Produtos Prontos
     readyProducts.filter(rp => rp.showOnHome !== false).forEach(rp => {
       let subcat = rp.subcategory?.trim();
+      const isCombo = Boolean(rp.isCombo || rp.category === 'combo' || rp.showInComboSection);
       if (!subcat) {
-        if (rp.category === 'sandwich') subcat = 'Lanches Prontos';
+        if (isCombo) subcat = 'Combos';
+        else if (rp.category === 'sandwich') subcat = 'Lanches Prontos';
         else if (rp.category === 'salad') subcat = 'Saladas Prontas';
         else if (rp.category === 'drink') subcat = 'Bebidas Prontas';
         else if (rp.category === 'cookie') subcat = 'Cookies & Sobremesas';
@@ -693,7 +710,7 @@ export default function CustomerSite({
         originalPrice: rp.originalPrice,
         isPopular: rp.isPopular,
         isPromo: rp.isPromo,
-        badgeText: rp.badgeText,
+        badgeText: rp.badgeText || (isCombo ? 'COMBO' : undefined),
         image: rp.image,
         category: rp.category,
         subcategory: subcat,
@@ -737,6 +754,13 @@ export default function CustomerSite({
   const availableExpressSubcategories = useMemo(() => {
     return Array.from(new Set(expressCombinedItems.map(item => item.subcategory))).filter(Boolean);
   }, [expressCombinedItems]);
+
+  const homeFeaturedCombos = useMemo(() => {
+    return readyProducts.filter(p => 
+      p.showOnHome !== false && 
+      (p.showInComboSection || p.isCombo || p.displaySection === 'combo' || p.category === 'combo')
+    );
+  }, [readyProducts]);
 
   const groupedBySubcategory = useMemo(() => {
     const groups: { [subcat: string]: typeof expressCombinedItems } = {};
@@ -1722,10 +1746,10 @@ export default function CustomerSite({
   };
 
   return (
-    <div className="space-y-8 w-full" id="customer-site-root">
+    <div className="space-y-8 w-full max-w-full overflow-x-hidden" id="customer-site-root">
       {/* View: HOME */}
       {view === 'home' && (
-        <div className="space-y-6 w-full animate-in fade-in duration-200" id="customer-home-view">
+        <div className="space-y-6 w-full max-w-full overflow-x-hidden" id="customer-home-view">
           {/* Store Info Bar above EXPRESSO */}
           {storeInfo && storeInfo.showOnHomePage !== false && (() => {
             const mapsUrl = (storeInfo.latitude && storeInfo.longitude)
@@ -1841,6 +1865,125 @@ export default function CustomerSite({
             </div>
           )}
 
+          {/* SEÇÃO DE DESTAQUE NA PÁGINA INICIAL CHAMADA "COMBO" */}
+          {homeFeaturedCombos.length > 0 && (
+            <div className="w-full bg-gradient-to-br from-amber-500/20 via-orange-500/10 to-amber-600/15 border-2 border-amber-400/80 rounded-3xl p-4 sm:p-6 shadow-sm space-y-4" id="combo-featured-section">
+              <div className="border-b border-amber-200/80 pb-3">
+                <h3 className="font-black text-slate-950 text-base sm:text-xl uppercase tracking-tight">
+                  DESTAQUE COMBO
+                </h3>
+              </div>
+
+              {/* Grade de Combos em Destaque */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {homeFeaturedCombos.map((combo) => {
+                  const numPrice = Number(combo.price) || 0;
+                  const numOrigPrice = Number(combo.originalPrice) || 0;
+                  const hasDiscount = Boolean(combo.originalPrice && numOrigPrice > numPrice);
+                  const comboImg = combo.image || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
+
+                  return (
+                    <div
+                      key={combo.id}
+                      className="bg-white rounded-2xl border-2 border-amber-200/90 shadow-md hover:shadow-xl hover:border-amber-400 transition-all overflow-hidden flex flex-col justify-between group"
+                    >
+                      {/* Imagem + Badges */}
+                      <div
+                        onClick={() => handleProductClick({ rawReadyProduct: combo, ...combo })}
+                        className="relative h-44 sm:h-48 overflow-hidden bg-slate-100 cursor-pointer"
+                        title="Clique para pedir este combo direto"
+                      >
+                        <img
+                          src={comboImg}
+                          alt={combo.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          referrerPolicy="no-referrer"
+                        />
+                        {combo.badgeText && (
+                          <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
+                            <span className="bg-slate-950 text-white font-black text-[10px] px-2 py-1 rounded-lg shadow-md uppercase">
+                              {combo.badgeText}
+                            </span>
+                          </div>
+                        )}
+
+                        {hasDiscount && (
+                          <div className="absolute top-2.5 right-2.5 bg-red-500 text-white font-black text-xs px-2 py-1 rounded-lg shadow-md">
+                            -{Math.round(((numOrigPrice - numPrice) / numOrigPrice) * 100)}%
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Conteúdo */}
+                      <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                        <div>
+                          <h4
+                            onClick={() => handleProductClick({ rawReadyProduct: combo, ...combo })}
+                            className="font-black text-slate-900 text-base sm:text-lg leading-snug group-hover:text-amber-600 transition-colors cursor-pointer"
+                          >
+                            {combo.name}
+                          </h4>
+
+                          {/* Lista de Bebidas e Insumos Inclusos */}
+                          {combo.comboItems && combo.comboItems.length > 0 ? (
+                            <div className="mt-2 bg-amber-50/90 border border-amber-200/80 rounded-xl p-2.5 space-y-1.5">
+                              <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider block">
+                                Incluso no Combo:
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {combo.comboItems.map((ci, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="bg-white text-slate-800 border border-amber-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md shadow-2xs flex items-center gap-1"
+                                  >
+                                    <span>🥤</span> {ci.quantity || 1}x {ci.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : (
+                            combo.description && (
+                              <p className="text-xs text-slate-600 font-medium line-clamp-2 mt-1.5">
+                                {combo.description}
+                              </p>
+                            )
+                          )}
+                        </div>
+
+                        {/* Preço e Botão de Pedir Direto */}
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <div>
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase">Preço Combo</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-lg sm:text-xl font-black text-brand-green">
+                                R$ {numPrice.toFixed(2).replace('.', ',')}
+                              </span>
+                              {hasDiscount && (
+                                <span className="text-xs text-slate-400 line-through">
+                                  R$ {numOrigPrice.toFixed(2).replace('.', ',')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleProductClick({ rawReadyProduct: combo, ...combo })}
+                            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                            title="Ir direto para o fechamento"
+                          >
+                            <Zap className="h-4 w-4 fill-slate-950 text-slate-950" />
+                            <span>Pedir Combo</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Cardápio Expresso - Direct Purchases (Full width, no borders/bg box) */}
           <div className="space-y-6 w-full p-0 border-0 bg-transparent shadow-none" id="express-menu-section">
             
@@ -1850,7 +1993,7 @@ export default function CustomerSite({
               <div className="w-full">
                 <div className="flex gap-2 items-center w-full">
                   {availableExpressSubcategories.length > 0 && (
-                    <div className="relative min-w-[130px] sm:min-w-[180px] max-w-[210px] shrink-0">
+                    <div className="relative min-w-[105px] sm:min-w-[180px] max-w-[210px] shrink-0">
                       <select
                         value={expressSubcategory}
                         onChange={(e) => setExpressSubcategory(e.target.value)}
@@ -1971,7 +2114,17 @@ export default function CustomerSite({
                           const numPrice = Number(item.price) || 0;
                           const numOrigPrice = Number(item.originalPrice) || 0;
                           const hasDiscount = Boolean(item.originalPrice && numOrigPrice > numPrice);
-                          const isBuildItem = item.category === 'sandwich' || item.category === 'salad' || item.rawReadyProduct?.category === 'sandwich' || item.rawReadyProduct?.category === 'salad';
+                          const isCombo = Boolean(
+                            item.isCombo || 
+                            item.rawReadyProduct?.isCombo || 
+                            item.skipIngredients || 
+                            item.rawReadyProduct?.skipIngredients || 
+                            item.showInComboSection || 
+                            item.rawReadyProduct?.showInComboSection || 
+                            item.category === 'combo' || 
+                            item.rawReadyProduct?.category === 'combo'
+                          );
+                          const isBuildItem = !isCombo && (item.category === 'sandwich' || item.category === 'salad' || item.rawReadyProduct?.category === 'sandwich' || item.rawReadyProduct?.category === 'salad');
 
                           return (
                             <div 
@@ -1981,7 +2134,7 @@ export default function CustomerSite({
                               <div 
                                 onClick={() => handleProductClick(item)}
                                 className="p-2.5 sm:p-3 bg-slate-50/60 rounded-t-[15px] cursor-pointer group/img relative overflow-hidden"
-                                title="Clique para ver detalhes / personalizar"
+                                title="Clique para ver detalhes / pedir"
                               >
                                 <img 
                                   src={imgUrl} 
@@ -1991,25 +2144,43 @@ export default function CustomerSite({
                                 />
                                 <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-xl m-2.5 sm:m-3">
                                   <span className="bg-white/95 text-slate-800 text-[11px] font-black px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5 transform translate-y-2 group-hover/img:translate-y-0 transition-transform">
-                                    <Sparkles className="h-3.5 w-3.5 text-brand-green" /> Ver Opções
+                                    {isCombo ? <Zap className="h-3.5 w-3.5 text-purple-600" /> : <Sparkles className="h-3.5 w-3.5 text-brand-green" />}
+                                    <span>{isCombo ? 'Pedir Combo' : 'Ver Opções'}</span>
                                   </span>
                                 </div>
                               </div>
 
                               <div className="p-3.5 flex-1 flex flex-col justify-between space-y-2.5">
                                 <div>
-                                  <h4 
-                                    onClick={() => handleProductClick(item)}
-                                    className="font-extrabold text-slate-900 text-sm sm:text-base leading-snug group-hover:text-brand-green transition-colors cursor-pointer"
-                                    title="Clique para ver detalhes / personalizar"
-                                  >
-                                    {item.name}
-                                  </h4>
-                                  {!isBuildItem && item.description && !item.description.includes('Item de estoque') && (
+                                  <div className="flex items-start justify-between gap-1">
+                                    <h4 
+                                      onClick={() => handleProductClick(item)}
+                                      className="font-extrabold text-slate-900 text-sm sm:text-base leading-snug group-hover:text-brand-green transition-colors cursor-pointer flex-1"
+                                      title="Clique para ver detalhes / pedir"
+                                    >
+                                      {item.name}
+                                    </h4>
+                                    {isCombo && (
+                                      <span className="bg-purple-100 text-purple-950 border border-purple-300 text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase shrink-0">
+                                        Combo
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  {isCombo && item.rawReadyProduct?.comboItems && item.rawReadyProduct.comboItems.length > 0 ? (
+                                    <div className="mt-1.5 bg-amber-50/90 border border-amber-200/80 rounded-lg p-1.5 text-[10px] text-amber-900 font-bold flex flex-wrap gap-1">
+                                      <span className="font-extrabold text-amber-950">Incluso:</span>
+                                      {item.rawReadyProduct.comboItems.map((ci, idx) => (
+                                        <span key={idx} className="bg-white px-1.5 py-0.5 rounded border border-amber-200">
+                                          🥤 {ci.quantity || 1}x {ci.name}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (!isBuildItem && item.description && !item.description.includes('Item de estoque') && (
                                     <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed mt-1">
                                       {item.description}
                                     </p>
-                                  )}
+                                  ))}
                                 </div>
 
                                 <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5">
@@ -2038,6 +2209,16 @@ export default function CustomerSite({
                                         <Sparkles className="h-3.5 w-3.5 text-brand-green" />
                                         <span>Monte o seu</span>
                                       </button>
+                                    ) : isCombo ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleProductClick(item)}
+                                        className="bg-purple-600 hover:bg-purple-700 text-white font-black text-xs px-3.5 py-2 rounded-[15px] transition-all cursor-pointer shadow-xs active:scale-95 flex items-center gap-1.5 shrink-0"
+                                        title="Pedir Combo (Fechamento Direto)"
+                                      >
+                                        <Zap className="h-3.5 w-3.5" />
+                                        <span>Pedir Combo</span>
+                                      </button>
                                     ) : (
                                       <button
                                         type="button"
@@ -2060,101 +2241,244 @@ export default function CustomerSite({
                         })}
                         </div>
                       ) : (
-                        /* TABLE VIEW */
-                        <div className="overflow-x-auto bg-white rounded-[15px] border border-slate-200 shadow-2xs">
-                          <table className="w-full text-left text-xs text-slate-700">
-                            <thead className="bg-slate-100/90 text-slate-800 font-extrabold uppercase tracking-wider text-[11px] border-b border-slate-200">
-                              <tr>
-                                <th className="p-3 w-14">Item</th>
-                                <th className="p-3">Produto / Insumo</th>
-                                <th className="p-3 hidden md:table-cell">Descrição</th>
-                                <th className="p-3 w-28 text-right">Preço</th>
-                                <th className="p-3 w-28 text-center">Ação</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                              {list.map((item) => {
-                                const imgUrl = getItemImageUrl(item);
-                                const numPrice = Number(item.price) || 0;
-                                const numOrigPrice = Number(item.originalPrice) || 0;
-                                const hasDiscount = Boolean(item.originalPrice && numOrigPrice > numPrice);
-                                const isBuildItem = item.category === 'sandwich' || item.category === 'salad' || item.rawReadyProduct?.category === 'sandwich' || item.rawReadyProduct?.category === 'salad';
-                                const displayDesc = item.description && !item.description.includes('Item de estoque') ? item.description : '';
+                        /* TABLE VIEW (DESKTOP: FULL TABLE / MOBILE: RESPONSIVE ROW LIST WITHOUT HORIZONTAL SCROLL) */
+                        <>
+                          {/* Desktop Table View */}
+                          <div className="hidden md:block overflow-x-auto bg-white rounded-[15px] border border-slate-200 shadow-2xs">
+                            <table className="w-full text-left text-xs text-slate-700">
+                              <thead className="bg-slate-100/90 text-slate-800 font-extrabold uppercase tracking-wider text-[11px] border-b border-slate-200">
+                                <tr>
+                                  <th className="p-3 w-14">Item</th>
+                                  <th className="p-3">Produto / Insumo</th>
+                                  <th className="p-3 hidden md:table-cell">Descrição</th>
+                                  <th className="p-3 w-28 text-right">Preço</th>
+                                  <th className="p-3 w-28 text-center">Ação</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100">
+                                {list.map((item) => {
+                                  const imgUrl = getItemImageUrl(item);
+                                  const numPrice = Number(item.price) || 0;
+                                  const numOrigPrice = Number(item.originalPrice) || 0;
+                                  const hasDiscount = Boolean(item.originalPrice && numOrigPrice > numPrice);
+                                  const isCombo = Boolean(
+                                    item.isCombo || 
+                                    item.rawReadyProduct?.isCombo || 
+                                    item.skipIngredients || 
+                                    item.rawReadyProduct?.skipIngredients || 
+                                    item.showInComboSection || 
+                                    item.rawReadyProduct?.showInComboSection || 
+                                    item.category === 'combo' || 
+                                    item.rawReadyProduct?.category === 'combo'
+                                  );
+                                  const isBuildItem = !isCombo && (item.category === 'sandwich' || item.category === 'salad' || item.rawReadyProduct?.category === 'sandwich' || item.rawReadyProduct?.category === 'salad');
+                                  const displayDesc = item.description && !item.description.includes('Item de estoque') ? item.description : '';
 
-                                return (
-                                  <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                                    <td 
-                                      className="p-2.5 cursor-pointer" 
-                                      onClick={() => handleProductClick(item)}
-                                      title="Clique para ver detalhes / personalizar"
-                                    >
-                                      <img
-                                        src={imgUrl}
-                                        alt={item.name}
-                                        className="w-11 h-11 object-cover rounded-[15px] border border-slate-200 hover:scale-105 transition-transform"
-                                        referrerPolicy="no-referrer"
-                                      />
-                                    </td>
-                                    <td 
-                                      className="p-2.5 cursor-pointer" 
-                                      onClick={() => handleProductClick(item)}
-                                      title="Clique para ver detalhes / personalizar"
-                                    >
-                                      <span className="font-extrabold text-slate-900 block text-xs sm:text-sm hover:text-brand-green transition-colors">{item.name}</span>
-                                      {isBuildItem ? (
-                                        <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded-[15px] inline-block mt-0.5">
+                                  return (
+                                    <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                                      <td 
+                                        className="p-2.5 cursor-pointer" 
+                                        onClick={() => handleProductClick(item)}
+                                        title="Clique para ver detalhes / pedir"
+                                      >
+                                        <img
+                                          src={imgUrl}
+                                          alt={item.name}
+                                          className="w-11 h-11 object-cover rounded-[15px] border border-slate-200 hover:scale-105 transition-transform"
+                                          referrerPolicy="no-referrer"
+                                        />
+                                      </td>
+                                      <td 
+                                        className="p-2.5 cursor-pointer" 
+                                        onClick={() => handleProductClick(item)}
+                                        title="Clique para ver detalhes / pedir"
+                                      >
+                                        <span className="font-extrabold text-slate-900 block text-xs sm:text-sm hover:text-brand-green transition-colors">{item.name}</span>
+                                        {isCombo ? (
+                                          <span className="text-[10px] text-purple-950 font-black bg-purple-100 border border-purple-300 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 mt-0.5">
+                                            Combo
+                                          </span>
+                                        ) : isBuildItem ? (
+                                          <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded-[15px] inline-block mt-0.5">
+                                            ✨ Customizável
+                                          </span>
+                                        ) : (
+                                          displayDesc ? <span className="text-[11px] text-slate-400 block md:hidden line-clamp-1">{displayDesc}</span> : null
+                                        )}
+                                      </td>
+                                      <td className="p-2.5 hidden md:table-cell text-slate-500">
+                                        {isCombo && item.rawReadyProduct?.comboItems && item.rawReadyProduct.comboItems.length > 0 ? (
+                                          <span className="text-amber-900 font-bold text-[11px]">
+                                            Incluso: {item.rawReadyProduct.comboItems.map(ci => `${ci.quantity || 1}x ${ci.name}`).join(' + ')}
+                                          </span>
+                                        ) : (
+                                          displayDesc || '-'
+                                        )}
+                                      </td>
+                                      <td className="p-2.5 text-right font-black text-emerald-700 whitespace-nowrap">
+                                        <div>R$ {numPrice.toFixed(2).replace('.', ',')}</div>
+                                        {hasDiscount && (
+                                          <div className="text-slate-400 text-[10px] line-through font-normal">
+                                            R$ {numOrigPrice.toFixed(2).replace('.', ',')}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="p-2.5 text-center whitespace-nowrap">
+                                        {isBuildItem ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setBuildModalFormat(item.category === 'salad' || item.rawReadyProduct?.category === 'salad' ? 'salad' : 'sandwich');
+                                              setBuildModalProduct(item.rawReadyProduct || null);
+                                              setIsBuildModalOpen(true);
+                                            }}
+                                            className="bg-brand-yellow hover:bg-yellow-400 text-brand-green font-black text-[11px] px-3 py-1.5 rounded-[15px] transition-all cursor-pointer shadow-xs active:scale-95 inline-flex items-center gap-1 border border-yellow-300"
+                                          >
+                                            <Sparkles className="h-3 w-3 text-brand-green" />
+                                            <span>Monte o seu</span>
+                                          </button>
+                                        ) : isCombo ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleProductClick(item)}
+                                            className="bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] px-3 py-1.5 rounded-[15px] transition-all cursor-pointer shadow-xs active:scale-95 inline-flex items-center gap-1"
+                                            title="Pedir Combo (Fechamento Direto)"
+                                          >
+                                            <Zap className="h-3 w-3" />
+                                            <span>Pedir Combo</span>
+                                          </button>
+                                        ) : (
+                                          <button
+                                            type="button"
+                                            onClick={() => addToQuickCart({
+                                              name: item.name,
+                                              price: item.price,
+                                              image: item.image
+                                            })}
+                                            className="bg-brand-green hover:bg-brand-green-dark text-white font-extrabold text-[11px] px-3 py-1.5 rounded-[15px] transition-all shadow-2xs cursor-pointer active:scale-95 inline-flex items-center gap-1"
+                                          >
+                                            <ShoppingBag className="h-3 w-3 text-brand-yellow" />
+                                            <span>Adicionar</span>
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Mobile Table View: Compact full-width rows without any horizontal scrolling */}
+                          <div className="md:hidden bg-white rounded-[15px] border border-slate-200 shadow-2xs divide-y divide-slate-100 overflow-hidden w-full max-w-full">
+                            {list.map((item) => {
+                              const imgUrl = getItemImageUrl(item);
+                              const numPrice = Number(item.price) || 0;
+                              const numOrigPrice = Number(item.originalPrice) || 0;
+                              const hasDiscount = Boolean(item.originalPrice && numOrigPrice > numPrice);
+                              const isCombo = Boolean(
+                                item.isCombo || 
+                                item.rawReadyProduct?.isCombo || 
+                                item.skipIngredients || 
+                                item.rawReadyProduct?.skipIngredients || 
+                                item.showInComboSection || 
+                                item.rawReadyProduct?.showInComboSection || 
+                                item.category === 'combo' || 
+                                item.rawReadyProduct?.category === 'combo'
+                              );
+                              const isBuildItem = !isCombo && (item.category === 'sandwich' || item.category === 'salad' || item.rawReadyProduct?.category === 'sandwich' || item.rawReadyProduct?.category === 'salad');
+                              const displayDesc = item.description && !item.description.includes('Item de estoque') ? item.description : '';
+
+                              return (
+                                <div key={item.id} className="p-3 flex items-center justify-between gap-2.5 hover:bg-slate-50/80 transition-colors w-full max-w-full">
+                                  {/* Left: Thumbnail & Details */}
+                                  <div 
+                                    className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer"
+                                    onClick={() => handleProductClick(item)}
+                                    title="Clique para ver detalhes / pedir"
+                                  >
+                                    <img
+                                      src={imgUrl}
+                                      alt={item.name}
+                                      className="w-12 h-12 object-cover rounded-xl border border-slate-200 shrink-0 bg-slate-50"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <span className="font-extrabold text-slate-900 text-xs block truncate hover:text-brand-green transition-colors">
+                                        {item.name}
+                                      </span>
+                                      {isCombo ? (
+                                        <span className="text-[9px] text-purple-950 font-black bg-purple-100 border border-purple-300 px-1.5 py-0.2 rounded inline-block mt-0.5">
+                                          Combo
+                                        </span>
+                                      ) : isBuildItem ? (
+                                        <span className="text-[9px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.2 rounded inline-block mt-0.5">
                                           ✨ Customizável
                                         </span>
+                                      ) : null}
+                                      {isCombo && item.rawReadyProduct?.comboItems && item.rawReadyProduct.comboItems.length > 0 ? (
+                                        <span className="text-amber-900 font-bold text-[10px] block truncate mt-0.5">
+                                          Incluso: {item.rawReadyProduct.comboItems.map(ci => `${ci.quantity || 1}x ${ci.name}`).join(' + ')}
+                                        </span>
                                       ) : (
-                                        displayDesc ? <span className="text-[11px] text-slate-400 block md:hidden line-clamp-1">{displayDesc}</span> : null
+                                        displayDesc ? <span className="text-[10px] text-slate-400 block truncate mt-0.5">{displayDesc}</span> : null
                                       )}
-                                    </td>
-                                    <td className="p-2.5 hidden md:table-cell text-slate-500">
-                                      {displayDesc || '-'}
-                                    </td>
-                                    <td className="p-2.5 text-right font-black text-emerald-700 whitespace-nowrap">
-                                      <div>R$ {numPrice.toFixed(2).replace('.', ',')}</div>
-                                      {hasDiscount && (
-                                        <div className="text-slate-400 text-[10px] line-through font-normal">
-                                          R$ {numOrigPrice.toFixed(2).replace('.', ',')}
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="p-2.5 text-center whitespace-nowrap">
-                                      {isBuildItem ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setBuildModalFormat(item.category === 'salad' || item.rawReadyProduct?.category === 'salad' ? 'salad' : 'sandwich');
-                                            setBuildModalProduct(item.rawReadyProduct || null);
-                                            setIsBuildModalOpen(true);
-                                          }}
-                                          className="bg-brand-yellow hover:bg-yellow-400 text-brand-green font-black text-[11px] px-3 py-1.5 rounded-[15px] transition-all cursor-pointer shadow-xs active:scale-95 inline-flex items-center gap-1 border border-yellow-300"
-                                        >
-                                          <Sparkles className="h-3 w-3 text-brand-green" />
-                                          <span>Monte o seu</span>
-                                        </button>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => addToQuickCart({
-                                            name: item.name,
-                                            price: item.price,
-                                            image: item.image
-                                          })}
-                                          className="bg-brand-green hover:bg-brand-green-dark text-white font-extrabold text-[11px] px-3 py-1.5 rounded-[15px] transition-all shadow-2xs cursor-pointer active:scale-95 inline-flex items-center gap-1"
-                                        >
-                                          <ShoppingBag className="h-3 w-3 text-brand-yellow" />
-                                          <span>Adicionar</span>
-                                        </button>
-                                      )}
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-                        </div>
+                                      <div className="flex items-center gap-1.5 mt-0.5 font-black text-emerald-700 text-xs">
+                                        <span>R$ {numPrice.toFixed(2).replace('.', ',')}</span>
+                                        {hasDiscount && (
+                                          <span className="text-slate-400 text-[10px] line-through font-normal">
+                                            R$ {numOrigPrice.toFixed(2).replace('.', ',')}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Right: Action Button */}
+                                  <div className="shrink-0">
+                                    {isBuildItem ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setBuildModalFormat(item.category === 'salad' || item.rawReadyProduct?.category === 'salad' ? 'salad' : 'sandwich');
+                                          setBuildModalProduct(item.rawReadyProduct || null);
+                                          setIsBuildModalOpen(true);
+                                        }}
+                                        className="bg-brand-yellow hover:bg-yellow-400 text-brand-green font-black text-[11px] px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs active:scale-95 inline-flex items-center gap-1 border border-yellow-300 whitespace-nowrap"
+                                      >
+                                        <Sparkles className="h-3 w-3 text-brand-green" />
+                                        <span>Montar</span>
+                                      </button>
+                                    ) : isCombo ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleProductClick(item)}
+                                        className="bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs active:scale-95 inline-flex items-center gap-1 whitespace-nowrap"
+                                        title="Pedir Combo (Fechamento Direto)"
+                                      >
+                                        <Zap className="h-3 w-3" />
+                                        <span>Pedir</span>
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => addToQuickCart({
+                                          name: item.name,
+                                          price: item.price,
+                                          image: item.image
+                                        })}
+                                        className="bg-brand-green hover:bg-brand-green-dark text-white font-extrabold text-[11px] px-2.5 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95 inline-flex items-center gap-1 whitespace-nowrap"
+                                      >
+                                        <ShoppingBag className="h-3 w-3 text-brand-yellow" />
+                                        <span>Pedir</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </>
                       )}
                     </div>
                   );
@@ -3584,6 +3908,31 @@ export default function CustomerSite({
                     </div>
                   </div>
 
+                  {Boolean(quickBuyProduct.isCombo || quickBuyProduct.comboItems?.length) && (
+                    <div className="bg-amber-50/90 border border-amber-300 rounded-xl p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-black text-amber-950 uppercase flex items-center gap-1.5">
+                          <span>Combo Completo</span>
+                        </span>
+                        <span className="bg-amber-400 text-slate-950 text-[9px] font-black px-2 py-0.5 rounded-full uppercase">
+                          Fechamento Direto
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-600 font-medium">
+                        Este combo já vem pronto com todas as bebidas e itens inclusos, sem necessidade de selecionar insumos.
+                      </p>
+                      {quickBuyProduct.comboItems && quickBuyProduct.comboItems.length > 0 && (
+                        <div className="pt-1 flex flex-wrap gap-1.5">
+                          {quickBuyProduct.comboItems.map((ci, idx) => (
+                            <span key={idx} className="bg-white border border-amber-300 text-slate-800 text-[11px] font-extrabold px-2 py-0.5 rounded-md shadow-2xs">
+                              🥤 {ci.quantity || 1}x {ci.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Quantity selector */}
                   <div className="flex items-center justify-between border-t border-b border-slate-100 py-3">
                     <span className="text-xs font-bold text-slate-700 uppercase">Quantidade</span>
@@ -3748,6 +4097,18 @@ export default function CustomerSite({
                         <span>Item:</span>
                         <span className="font-bold text-slate-800 truncate max-w-[180px]">{quickBuyProduct.name} ({quickBuyQty}x)</span>
                       </div>
+                      {Boolean(quickBuyProduct.isCombo || quickBuyProduct.comboItems?.length) && quickBuyProduct.comboItems && quickBuyProduct.comboItems.length > 0 && (
+                        <div className="bg-amber-50/90 border border-amber-200 rounded-lg p-2 text-[11px] text-amber-950 space-y-1">
+                          <span className="font-black block uppercase text-[10px] text-amber-900">Itens Inclusos no Combo:</span>
+                          <div className="flex flex-wrap gap-1">
+                            {quickBuyProduct.comboItems.map((ci, idx) => (
+                              <span key={idx} className="bg-white border border-amber-300 px-1.5 py-0.5 rounded font-extrabold text-slate-800 text-[10px]">
+                                🥤 {ci.quantity || 1}x {ci.name}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       <div className="flex justify-between text-slate-600">
                         <span>Cliente:</span>
                         <span className="font-bold text-slate-800">{customerName} {customerPhone ? `(${customerPhone})` : ''}</span>
@@ -3893,12 +4254,33 @@ export default function CustomerSite({
                     <span>Voltar</span>
                   </button>
                   <button
-                    onClick={() => handleQuickCheckout([{
-                      name: quickBuyProduct.name,
-                      price: quickBuyProduct.price,
-                      sandwichConfig: quickBuyProduct.sandwichConfig,
-                      quantity: quickBuyQty
-                    }])}
+                    onClick={() => {
+                      const comboDrinksAndCookies = quickBuyProduct.comboItems?.map(ci => `${ci.quantity || 1}x ${ci.name}`) || [];
+                      const formattedConfig = quickBuyProduct.sandwichConfig ? {
+                        ...quickBuyProduct.sandwichConfig,
+                        drinksAndCookies: [
+                          ...(quickBuyProduct.sandwichConfig.drinksAndCookies || []),
+                          ...comboDrinksAndCookies
+                        ]
+                      } : (comboDrinksAndCookies.length > 0 ? {
+                        bread: 'Combo Fechado',
+                        size: 'Padrao',
+                        protein: 'Combo',
+                        cheese: 'Incluso',
+                        toasted: false,
+                        veggies: [],
+                        sauces: [],
+                        extras: [],
+                        drinksAndCookies: comboDrinksAndCookies
+                      } : undefined);
+
+                      handleQuickCheckout([{
+                        name: quickBuyProduct.name,
+                        price: quickBuyProduct.price,
+                        sandwichConfig: formattedConfig,
+                        quantity: quickBuyQty
+                      }]);
+                    }}
                     disabled={submitting}
                     className="flex-2 bg-brand-yellow hover:bg-brand-yellow-dark text-brand-green font-black py-3 rounded-xl text-center text-xs transition-all active:scale-98 shadow-md flex justify-center items-center gap-2 disabled:opacity-50 cursor-pointer"
                   >

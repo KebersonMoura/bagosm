@@ -457,7 +457,7 @@ export default function App() {
       </header>
 
       {/* Main Container Content */}
-      <main className={`flex-1 w-full mx-auto py-6 transition-all ${isFullWidth || mode === 'cliente' ? 'max-w-none px-3 sm:px-6 lg:px-8' : 'max-w-7xl px-4 sm:px-6 lg:px-8'}`}>
+      <main className={`flex-1 w-full max-w-full overflow-x-hidden mx-auto py-6 transition-all ${isFullWidth || mode === 'cliente' ? 'max-w-none px-3 sm:px-6 lg:px-8' : 'max-w-7xl px-4 sm:px-6 lg:px-8'}`}>
         
         {/* Customer Mode Render */}
         {mode === 'cliente' && (

@@ -1415,8 +1415,13 @@ async function startServer() {
     }
 
     const index = readyProducts.findIndex(p => p.id === product.id);
+    const isCombo = Boolean(product.isCombo || product.category === 'combo' || product.displaySection === 'combo');
     const targetProd: ReadyProduct = {
       ...product,
+      isCombo,
+      comboItems: Array.isArray(product.comboItems) ? product.comboItems : [],
+      showInComboSection: Boolean(product.showInComboSection),
+      skipIngredients: product.skipIngredients !== undefined ? Boolean(product.skipIngredients) : (isCombo ? true : false),
       showOnHome: product.showOnHome !== undefined ? Boolean(product.showOnHome) : (index !== -1 ? readyProducts[index].showOnHome !== false : true)
     };
     if (index !== -1) {
