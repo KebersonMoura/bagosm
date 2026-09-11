@@ -8,10 +8,12 @@
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-VEY28HE4DF"></script>
     <script>
       window.dataLayer = window.dataLayer || [];
-      function gtag(){dataLayer.push(arguments);}
-      gtag('js', new Date());
+      window.gtag = function(){ window.dataLayer.push(arguments); };
+      window.gtag('js', new Date());
 
-      gtag('config', 'G-VEY28HE4DF');
+      window.gtag('config', 'G-VEY28HE4DF', {
+        send_page_view: true
+      });
     </script>
   </head>
   <body>

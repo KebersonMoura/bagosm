@@ -1,6 +1,6 @@
 /**
  * Utilitário de monitoramento de eventos para o Google Analytics (GA4)
- * Tag configurada no sistema: G-VEY28HE4DF
+ * ID de medição: G-VEY28HE4DF
  */
 
 export interface TrackableItem {
@@ -13,16 +13,45 @@ export interface TrackableItem {
 }
 
 /**
+ * Obtém ou inicializa a função gtag de forma segura e resiliente
+ */
+function safeGtag(...args: any[]) {
+  if (typeof window === 'undefined') return;
+  const win = window as any;
+
+  // Garante que dataLayer existe
+  win.dataLayer = win.dataLayer || [];
+
+  // Garante que window.gtag existe
+  if (typeof win.gtag !== 'function') {
+    win.gtag = function() {
+      win.dataLayer.push(arguments);
+    };
+  }
+
+  try {
+    // 1. Dispara pelo gtag nativo
+    win.gtag(...args);
+
+    // 2. Se for um evento, também empurra diretamente para o dataLayer como fallback
+    if (args[0] === 'event' && typeof args[1] === 'string') {
+      const eventName = args[1];
+      const eventParams = args[2] || {};
+      win.dataLayer.push({
+        event: eventName,
+        ...eventParams
+      });
+    }
+  } catch (e) {
+    console.warn('[Analytics GA4] Falha ao enviar evento:', e);
+  }
+}
+
+/**
  * Dispara evento de clique em item/produto no Google Analytics (GA4)
- * Envia o evento padrão de e-commerce 'select_item' e o evento customizado 'product_click'
  */
 export function trackItemClick(item: TrackableItem, origin: string = 'pagina_inicial') {
   try {
-    if (typeof window === 'undefined') return;
-
-    const win = window as any;
-    if (typeof win.gtag !== 'function') return;
-
     const priceNumber = typeof item.price === 'number' 
       ? item.price 
       : Number(item.price) || 0;
@@ -33,9 +62,10 @@ export function trackItemClick(item: TrackableItem, origin: string = 'pagina_ini
     const subcategory = item.subcategory || '';
 
     // 1. Evento Recomendado de E-commerce do GA4: select_item
-    win.gtag('event', 'select_item', {
+    safeGtag('event', 'select_item', {
       item_list_id: origin,
       item_list_name: origin,
+      debug_mode: true,
       items: [
         {
           item_id: itemId,
@@ -49,8 +79,8 @@ export function trackItemClick(item: TrackableItem, origin: string = 'pagina_ini
       ]
     });
 
-    // 2. Evento Customizado Direto: product_click (Permite métricas e relatórios rápidos em tempo real no GA4)
-    win.gtag('event', 'product_click', {
+    // 2. Evento Direto do GA4: product_click (Permite métricas e relatórios rápidos em tempo real)
+    safeGtag('event', 'product_click', {
       item_name: itemName,
       item_id: itemId,
       item_category: category,
@@ -58,33 +88,29 @@ export function trackItemClick(item: TrackableItem, origin: string = 'pagina_ini
       price: priceNumber,
       currency: 'BRL',
       click_location: origin,
-      is_combo: Boolean(item.isCombo)
+      is_combo: Boolean(item.isCombo),
+      debug_mode: true
     });
 
-    if (process.env.NODE_ENV === 'development') {
-      console.debug(`[GA4] Click monitorado no produto: "${itemName}" (origem: ${origin})`);
-    }
+    console.info(`[Analytics GA4] Clique registrado: "${itemName}" (origem: ${origin})`);
   } catch (err) {
-    console.debug('[GA4] Erro ao registrar clique:', err);
+    console.warn('[Analytics GA4] Erro ao registrar clique:', err);
   }
 }
 
 /**
- * Dispara evento quando o cliente adiciona um item ao carrinho rápido
+ * Dispara evento quando o cliente adiciona um item ao carrinho
  */
 export function trackAddToCart(item: TrackableItem) {
   try {
-    if (typeof window === 'undefined') return;
-    const win = window as any;
-    if (typeof win.gtag !== 'function') return;
-
     const priceNumber = typeof item.price === 'number' 
       ? item.price 
       : Number(item.price) || 0;
 
-    win.gtag('event', 'add_to_cart', {
+    safeGtag('event', 'add_to_cart', {
       currency: 'BRL',
       value: priceNumber,
+      debug_mode: true,
       items: [
         {
           item_id: String(item.id || item.name),
@@ -96,8 +122,10 @@ export function trackAddToCart(item: TrackableItem) {
         }
       ]
     });
+
+    console.info(`[Analytics GA4] Adicionado ao carrinho: "${item.name}"`);
   } catch (err) {
-    console.debug('[GA4] Erro ao registrar add_to_cart:', err);
+    console.warn('[Analytics GA4] Erro ao registrar add_to_cart:', err);
   }
 }
 
@@ -106,21 +134,34 @@ export function trackAddToCart(item: TrackableItem) {
  */
 export function trackPurchase(order: { id?: string; total: number; items?: any[] }) {
   try {
-    if (typeof window === 'undefined') return;
-    const win = window as any;
-    if (typeof win.gtag !== 'function') return;
-
-    win.gtag('event', 'purchase', {
+    safeGtag('event', 'purchase', {
       transaction_id: order.id || `order-${Date.now()}`,
       value: Number(order.total) || 0,
       currency: 'BRL',
+      debug_mode: true,
       items: (order.items || []).map(i => ({
         item_name: i.name,
         price: Number(i.price) || 0,
         quantity: i.quantity || 1
       }))
     });
+
+    console.info(`[Analytics GA4] Compra registrada com sucesso: Pedido #${order.id || ''}`);
   } catch (err) {
-    console.debug('[GA4] Erro ao registrar purchase:', err);
+    console.warn('[Analytics GA4] Erro ao registrar purchase:', err);
+  }
+}
+
+/**
+ * Dispara evento quando o cliente filtra por subcategoria
+ */
+export function trackCategoryFilter(subcategory: string) {
+  try {
+    safeGtag('event', 'filter_subcategory', {
+      subcategory_name: subcategory,
+      debug_mode: true
+    });
+  } catch (err) {
+    console.warn('[Analytics GA4] Erro ao registrar filtro:', err);
   }
 }

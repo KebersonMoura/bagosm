@@ -57,7 +57,7 @@ import {
   StoreDeliverySettings,
   DEFAULT_DELIVERY_SETTINGS
 } from '../utils/deliverySettings';
-import { trackItemClick, trackAddToCart, trackPurchase } from '../utils/analytics';
+import { trackItemClick, trackAddToCart, trackPurchase, trackCategoryFilter } from '../utils/analytics';
 
 interface CustomerSiteProps {
   ingredients: Ingredient[];
@@ -596,6 +596,13 @@ export default function CustomerSite({
     quantity: number;
     notes?: string;
   }) => {
+    trackAddToCart({
+      id: item.productName || 'customizado',
+      name: item.productName || 'Customizado',
+      price: item.price,
+      category: 'sanduiche_customizado'
+    });
+
     setQuickCart(prev => [
       ...prev,
       {
@@ -2029,7 +2036,10 @@ export default function CustomerSite({
                     <div className="relative min-w-[105px] sm:min-w-[180px] max-w-[210px] shrink-0">
                       <select
                         value={expressSubcategory}
-                        onChange={(e) => setExpressSubcategory(e.target.value)}
+                        onChange={(e) => {
+                          setExpressSubcategory(e.target.value);
+                          trackCategoryFilter(e.target.value);
+                        }}
                         className="w-full bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2.5 text-xs font-extrabold text-slate-800 focus:outline-none focus:border-brand-green shadow-2xs appearance-none truncate cursor-pointer"
                       >
                         <option value="all">🏷️ Subcategorias (Todas)</option>
