@@ -840,8 +840,10 @@ async function executeSaveOrder(order: Order): Promise<boolean> {
   // Clean old items for this order to ensure fresh state
   await query(`DELETE FROM order_items WHERE order_id = ?`, [order.id]);
 
-  // Insert order items
+  // Insert order items in a single batch query
   if (order.items && order.items.length > 0) {
+    const placeholders: string[] = [];
+    const values: any[] = [];
     for (let idx = 0; idx < order.items.length; idx++) {
       const item = order.items[idx];
       let pName = item.productName || (item as any).name;
@@ -855,10 +857,8 @@ async function executeSaveOrder(order: Order): Promise<boolean> {
       }
       const itemId = `item-${order.id}-${idx}-${Math.random().toString(36).substr(2, 6)}`;
       const swJson = sw ? (typeof sw === 'string' ? sw : JSON.stringify(sw)) : null;
-      await query(`
-        INSERT INTO order_items (id, order_id, product_name, is_ready_product, price, quantity, sandwich_details_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?)');
+      values.push(
         itemId,
         order.id,
         pName,
@@ -866,12 +866,18 @@ async function executeSaveOrder(order: Order): Promise<boolean> {
         Number(item.price) || 0,
         Number(item.quantity) || 1,
         swJson
-      ]);
+      );
     }
+    await query(`
+      INSERT INTO order_items (id, order_id, product_name, is_ready_product, price, quantity, sandwich_details_json)
+      VALUES ${placeholders.join(', ')}
+    `, values);
   }
 
-  // Keep entregas_detalhadas table in sync
-  await syncOrderToDeliveriesTable(order);
+  // Keep entregas_detalhadas table in sync in background (non-blocking for fast sales response)
+  syncOrderToDeliveriesTable(order).catch(err => {
+    console.warn('[MySQL] Notice during background sync to entregas_detalhadas:', err);
+  });
 
   return true;
 }
@@ -1144,6 +1150,9 @@ export async function syncOrderToDeliveriesTable(order: Order): Promise<void> {
       // Continue even if delete had warning
     }
 
+    const placeholders: string[] = [];
+    const values: any[] = [];
+
     for (let idx = 0; idx < order.items.length; idx++) {
       const item = order.items[idx];
       let pName = item.productName || (item as any).name || 'Produto';
@@ -1165,14 +1174,8 @@ export async function syncOrderToDeliveriesTable(order: Order): Promise<void> {
       let orderDate = order.createdAt ? new Date(order.createdAt) : new Date();
       if (isNaN(orderDate.getTime())) orderDate = new Date();
 
-      await query(`
-        REPLACE INTO entregas_detalhadas (
-          id, order_id, codigo_pedido, telefone, cliente, comanda,
-          produto, quantidade, preco_unitario, subtotal, detalhes_ingredientes,
-          tipo_entrega, endereco_entrega, taxa_entrega, forma_pagamento,
-          status_pedido, data_hora, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-      `, [
+      placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())');
+      values.push(
         rowId,
         order.id,
         order.code,
@@ -1190,7 +1193,18 @@ export async function syncOrderToDeliveriesTable(order: Order): Promise<void> {
         order.paymentMethod || null,
         order.status,
         orderDate
-      ]);
+      );
+    }
+
+    if (placeholders.length > 0) {
+      await query(`
+        REPLACE INTO entregas_detalhadas (
+          id, order_id, codigo_pedido, telefone, cliente, comanda,
+          produto, quantidade, preco_unitario, subtotal, detalhes_ingredientes,
+          tipo_entrega, endereco_entrega, taxa_entrega, forma_pagamento,
+          status_pedido, data_hora, created_at
+        ) VALUES ${placeholders.join(', ')}
+      `, values);
     }
   } catch (err) {
     console.warn('[MySQL] Error syncing order to entregas_detalhadas:', err);

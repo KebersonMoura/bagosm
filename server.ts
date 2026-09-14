@@ -1823,62 +1823,45 @@ async function startServer() {
     return usage;
   }
 
-  // Deduct stock for order and persist directly to MySQL database
+  // Deduct stock for order and persist directly to MySQL database (Fast & Parallel)
   async function deductStockForOrder(items: any[]): Promise<void> {
-    const dbIngs = await dbGetIngredients();
-    if (dbIngs !== null && dbIngs.length > 0) {
-      ingredients = dbIngs;
-    }
-    const dbProds = await dbGetReadyProducts();
-    if (dbProds !== null && dbProds.length > 0) {
-      readyProducts = dbProds;
-    }
     const usage = calculateIngredientUsage(items);
     console.log('[Stock] Deducting stock for order. Items:', (items || []).length, 'Usage count:', Object.keys(usage).length);
+    const updates: Promise<any>[] = [];
+
     for (const { ingredient, qty } of Object.values(usage)) {
       const targetIng = ingredients.find(i => i.id === ingredient.id || i.name.toLowerCase() === ingredient.name.toLowerCase()) || ingredient;
       targetIng.stock = Math.max(0, targetIng.stock - qty);
-      const updateOk = await dbUpdateStock(targetIng.id, targetIng.stock, targetIng.name);
-      console.log(`[Stock] Deducted ${qty} of "${targetIng.name}" (${targetIng.id}). New Stock: ${targetIng.stock} (DB: ${updateOk})`);
+      updates.push(dbUpdateStock(targetIng.id, targetIng.stock, targetIng.name));
     }
 
-    // Refresh ingredients to guarantee accurate synchronized state
-    const freshIngs = await dbGetIngredients();
-    if (freshIngs !== null && freshIngs.length > 0) {
-      ingredients = freshIngs;
-    }
-
-    // Broadcast stock updates to all connected clients immediately
+    // Broadcast stock updates to all connected clients immediately (zero UI lag)
     broadcastEvent('STOCKS_REFRESH', ingredients);
+
+    // Persist all stock changes to MySQL in parallel without blocking sequential queries
+    if (updates.length > 0) {
+      await Promise.all(updates).catch(e => console.warn('[Stock] Notice during parallel stock update:', e));
+    }
   }
 
-  // Restore stock for order and persist directly to MySQL database
+  // Restore stock for order and persist directly to MySQL database (Fast & Parallel)
   async function restoreStockForOrder(items: any[]): Promise<void> {
-    const dbIngs = await dbGetIngredients();
-    if (dbIngs !== null && dbIngs.length > 0) {
-      ingredients = dbIngs;
-    }
-    const dbProds = await dbGetReadyProducts();
-    if (dbProds !== null && dbProds.length > 0) {
-      readyProducts = dbProds;
-    }
     const usage = calculateIngredientUsage(items);
     console.log('[Stock] Restoring stock for order. Items:', (items || []).length, 'Usage count:', Object.keys(usage).length);
+    const updates: Promise<any>[] = [];
+
     for (const { ingredient, qty } of Object.values(usage)) {
       const targetIng = ingredients.find(i => i.id === ingredient.id || i.name.toLowerCase() === ingredient.name.toLowerCase()) || ingredient;
       targetIng.stock = targetIng.stock + qty;
-      const updateOk = await dbUpdateStock(targetIng.id, targetIng.stock, targetIng.name);
-      console.log(`[Stock] Restored ${qty} of "${targetIng.name}" (${targetIng.id}). New Stock: ${targetIng.stock} (DB: ${updateOk})`);
-    }
-
-    // Refresh ingredients to guarantee accurate synchronized state
-    const freshIngs = await dbGetIngredients();
-    if (freshIngs !== null && freshIngs.length > 0) {
-      ingredients = freshIngs;
+      updates.push(dbUpdateStock(targetIng.id, targetIng.stock, targetIng.name));
     }
 
     // Broadcast stock updates to all connected clients immediately
     broadcastEvent('STOCKS_REFRESH', ingredients);
+
+    if (updates.length > 0) {
+      await Promise.all(updates).catch(e => console.warn('[Stock] Notice during parallel stock restore:', e));
+    }
   }
 
   // Create new order (Client / POS)
@@ -1950,10 +1933,10 @@ async function startServer() {
     // Deduct stock in memory and persist in MySQL database
     await deductStockForOrder(sanitizedItems);
 
-    // Generate unique 8-digit pickup code (e.g. BG-34567890) preventing collisions in MySQL and memory
-    let orderCode = await dbGenerateUniqueOrderCode();
+    // Generate unique 8-digit pickup code (e.g. BG-34567890) fast using memory collision check
+    let orderCode = `BG-${Math.floor(10000000 + Math.random() * 90000000)}`;
     while (orders.some(o => o.code === orderCode)) {
-      orderCode = await dbGenerateUniqueOrderCode();
+      orderCode = `BG-${Math.floor(10000000 + Math.random() * 90000000)}`;
     }
 
     const calculatedDeliveryFee = deliveryType === 'entrega' ? (Number(req.body.deliveryFee) || 0) : 0;
@@ -1998,32 +1981,30 @@ async function startServer() {
 
     orders.unshift(newOrder); // Add to beginning
 
-    // Save order in MySQL database
+    // Save order in MySQL database (Await critical order row + items)
     await dbSaveOrder(newOrder);
 
-    // Save/update customer profile in MySQL database if phone & name are present
+    // Save/update customer profile in background (non-blocking)
     if (customerPhone && customerName) {
-      try {
-        await dbSaveCustomer({
-          phone: customerPhone,
-          name: customerName,
-          street: req.body.addressStreet || req.body.street,
-          number: req.body.addressNumber || req.body.number,
-          neighborhood: req.body.addressNeighborhood || req.body.neighborhood,
-          city: req.body.addressCity || req.body.city,
-          state: req.body.addressState || req.body.state,
-          complement: req.body.addressComplement || req.body.complement,
-          reference: req.body.addressReference || req.body.reference,
-          lat: req.body.deliveryLat,
-          lng: req.body.deliveryLng
-        });
-      } catch (custErr) {
+      dbSaveCustomer({
+        phone: customerPhone,
+        name: customerName,
+        street: req.body.addressStreet || req.body.street,
+        number: req.body.addressNumber || req.body.number,
+        neighborhood: req.body.addressNeighborhood || req.body.neighborhood,
+        city: req.body.addressCity || req.body.city,
+        state: req.body.addressState || req.body.state,
+        complement: req.body.addressComplement || req.body.complement,
+        reference: req.body.addressReference || req.body.reference,
+        lat: req.body.deliveryLat,
+        lng: req.body.deliveryLng
+      }).catch(custErr => {
         console.warn('[Server] Notice saving customer profile on order creation:', custErr);
-      }
+      });
     }
 
     if (newOrder.couponCode) {
-      await dbIncrementCouponUsage(newOrder.couponCode);
+      dbIncrementCouponUsage(newOrder.couponCode).catch(() => {});
       const cIndex = inMemoryCoupons.findIndex(c => c.code.toUpperCase() === newOrder.couponCode?.toUpperCase());
       if (cIndex >= 0) {
         inMemoryCoupons[cIndex].usedCount = (inMemoryCoupons[cIndex].usedCount || 0) + 1;
@@ -2357,17 +2338,45 @@ async function startServer() {
     res.json({ success: true, closedSession });
   });
 
-  // Get all orders
+  let lastDbOrdersSync = 0;
+  let isSyncingOrders = false;
+
+  // Get all orders (Instant response from memory, non-blocking background DB sync)
   app.get('/api/orders', async (req, res) => {
-    const dbOrders = await dbGetOrders();
-    if (dbOrders !== null) {
-      orders = dbOrders;
-      sales = dbOrders.map(o => ({
-        orderId: o.id,
-        date: o.createdAt,
-        amount: Number(o.totalPrice) || 0,
-        itemsCount: o.items ? o.items.length : 1
-      }));
+    if (orders.length === 0) {
+      const dbOrders = await dbGetOrders();
+      if (dbOrders !== null) {
+        orders = dbOrders;
+        sales = dbOrders.map(o => ({
+          orderId: o.id,
+          date: o.createdAt,
+          amount: Number(o.totalPrice) || 0,
+          itemsCount: o.items ? o.items.length : 1
+        }));
+        lastDbOrdersSync = Date.now();
+      }
+    } else {
+      const now = Date.now();
+      // Background sync every 45s without blocking the client response
+      if (now - lastDbOrdersSync > 45000 && !isSyncingOrders) {
+        isSyncingOrders = true;
+        dbGetOrders().then(dbOrders => {
+          if (dbOrders !== null && dbOrders.length > 0) {
+            orders = dbOrders;
+            sales = dbOrders.map(o => ({
+              orderId: o.id,
+              date: o.createdAt,
+              amount: Number(o.totalPrice) || 0,
+              itemsCount: o.items ? o.items.length : 1
+            }));
+          }
+          lastDbOrdersSync = Date.now();
+        }).catch(err => {
+          console.warn('[Server] Notice during background orders sync:', err);
+        }).finally(() => {
+          isSyncingOrders = false;
+        });
+      }
     }
     res.json(orders);
   });
