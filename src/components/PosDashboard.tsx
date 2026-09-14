@@ -690,19 +690,6 @@ export default function PosDashboard({
 
   useEffect(() => {
     fetchCashRegister();
-
-    const handleCashRegisterEvent = (e: any) => {
-      if (e?.detail) {
-        setCashRegister(e.detail);
-      } else {
-        fetchCashRegister();
-      }
-    };
-
-    window.addEventListener('bago_cash_register_update', handleCashRegisterEvent);
-    return () => {
-      window.removeEventListener('bago_cash_register_update', handleCashRegisterEvent);
-    };
   }, []);
 
   const formatMachineName = (provider?: string, model?: string) => {
@@ -2521,28 +2508,22 @@ export default function PosDashboard({
       userName: userName
     };
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
-
     try {
       let res;
       if (editingPosOrderId) {
         res = await fetch(`/api/orders/${editingPosOrderId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(orderPayload),
-          signal: controller.signal
+          body: JSON.stringify(orderPayload)
         });
       } else {
         res = await fetch('/api/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(orderPayload),
-          signal: controller.signal
+          body: JSON.stringify(orderPayload)
         });
       }
 
-      clearTimeout(timeoutId);
       const data = await res.json();
 
       if (res.ok && (data.success || data.id || data.order)) {
@@ -2558,18 +2539,12 @@ export default function PosDashboard({
         clearCart();
         setCustomerName('Cliente Balcão');
         setEditingPosOrderId(null);
-        fetchCashRegister();
       } else {
         showToast(data.error || 'Erro ao processar venda no PDV.', 'alert');
       }
-    } catch (err: any) {
-      clearTimeout(timeoutId);
+    } catch (err) {
       console.error('Erro ao finalizar venda no PDV:', err);
-      if (err?.name === 'AbortError') {
-        showToast('Tempo limite excedido ao comunicar com o servidor.', 'alert');
-      } else {
-        showToast('Erro de conexão ao enviar pedido.', 'alert');
-      }
+      showToast('Erro de conexão ao enviar pedido.', 'alert');
     } finally {
       setSubmitting(false);
     }

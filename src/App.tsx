@@ -152,8 +152,6 @@ export default function App() {
     modeRef.current = mode;
   }, [mode]);
 
-  const isFetchingOrdersRef = useRef(false);
-
   const fetchIngredients = async () => {
     try {
       const res = await fetchWithRetry('/api/ingredients');
@@ -167,10 +165,8 @@ export default function App() {
   };
 
   const fetchOrders = async () => {
-    if (isFetchingOrdersRef.current) return;
-    isFetchingOrdersRef.current = true;
     try {
-      const res = await fetch('/api/orders');
+      const res = await fetchWithRetry('/api/orders');
       if (res.ok) {
         const data: Order[] = await res.json();
         if (Array.isArray(data)) {
@@ -201,8 +197,6 @@ export default function App() {
       }
     } catch (err) {
       console.warn('Erro ao buscar pedidos (usando fallback local):', err);
-    } finally {
-      isFetchingOrdersRef.current = false;
     }
   };
 
@@ -310,8 +304,6 @@ export default function App() {
               const newLogo = parsed.data?.logoUrl || '';
               setStoreLogoUrl(newLogo);
               localStorage.setItem('bago_store_logo', newLogo);
-            } else if (parsed.type === 'CASH_REGISTER_UPDATE' || parsed.type === 'CASH_REGISTER_OPENED' || parsed.type === 'CASH_REGISTER_CLOSED') {
-              window.dispatchEvent(new CustomEvent('bago_cash_register_update', { detail: parsed.data }));
             }
           } catch (err) {
             console.error('Erro de decodificação de evento SSE:', err);
@@ -337,10 +329,10 @@ export default function App() {
 
     setupSSE();
 
-    // Fallback Background Poll (every 10 seconds) ensuring synchronization without overloading network
+    // High-frequency Background Poll (every 2.5 seconds) ensuring instant order arrival even without SSE
     const pollInterval = setInterval(() => {
       fetchOrders();
-    }, 10000);
+    }, 2500);
 
     return () => {
       isComponentMounted = false;
