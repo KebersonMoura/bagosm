@@ -14,7 +14,10 @@ export interface CustomSandwich {
 
 export interface OrderItem {
   id: string;
+  productId?: string;
+  name?: string;
   sandwich?: CustomSandwich;
+  sandwichConfig?: CustomSandwich;
   productName?: string;
   isReadyProduct?: boolean;
   price: number;
@@ -275,5 +278,75 @@ export interface CardMachine {
   active: boolean;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface TopProductItem {
+  id: string;
+  name: string;
+  category: string;
+  image?: string;
+  totalQuantity: number;
+  totalRevenue: number;
+  averagePrice: number;
+  balcaoQuantity: number;
+  balcaoRevenue: number;
+  deliveryQuantity: number;
+  deliveryRevenue: number;
+  ordersCount: number;
+  percentageOfQuantity: number;
+  percentageOfRevenue: number;
+  peakHour?: number;
+  peakHourLabel?: string;
+}
+
+export interface DailyProductSales {
+  date: string; // YYYY-MM-DD
+  displayDate: string; // DD/MM (ex: 17/09)
+  dayOfWeek: string; // ex: Seg, Ter, Qua, Qui, Sex, Sáb, Dom
+  totalQuantity: number;
+  totalRevenue: number;
+  balcaoQuantity: number;
+  balcaoRevenue: number;
+  deliveryQuantity: number;
+  deliveryRevenue: number;
+}
+
+export interface HourlyProductSales {
+  hour: number; // 0..23
+  hourLabel: string; // ex: "18h", "19h"
+  timeRangeLabel: string; // ex: "18:00 às 18:59"
+  totalQuantity: number;
+  totalRevenue: number;
+  balcaoQuantity: number;
+  balcaoRevenue: number;
+  deliveryQuantity: number;
+  deliveryRevenue: number;
+}
+
+export interface TopProductsReportData {
+  summary: {
+    totalProductsSold: number;
+    totalRevenue: number;
+    balcaoQuantity: number;
+    balcaoRevenue: number;
+    deliveryQuantity: number;
+    deliveryRevenue: number;
+    totalOrdersCount: number;
+    uniqueProductsCount: number;
+    balcaoQuantityPercentage: number;
+    deliveryQuantityPercentage: number;
+    balcaoRevenuePercentage: number;
+    deliveryRevenuePercentage: number;
+    topSellingProduct?: {
+      name: string;
+      quantity: number;
+      revenue: number;
+    };
+  };
+  topProducts: TopProductItem[];
+  dailyBreakdown: DailyProductSales[];
+  hourlyBreakdown: HourlyProductSales[];
+  availableProducts: Array<{ id: string; name: string; category: string }>;
+  availableCategories: string[];
 }
 

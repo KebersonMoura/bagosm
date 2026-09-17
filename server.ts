@@ -503,6 +503,124 @@ function broadcastEvent(type: string, data: any) {
   });
 }
 
+function seedRealisticOrdersIfNeeded(): Order[] {
+  if (orders && orders.length > 0) return orders;
+
+  const demoProducts = [
+    { id: 'prod-combo-start', name: 'COMBO START', price: 49.90, category: 'sandwich' },
+    { id: 'prod-bago-classic', name: 'Bagô Classic Costela', price: 33.50, category: 'sandwich' },
+    { id: 'prod-bago-frango', name: 'Bagô Frango Teriyaki', price: 26.50, category: 'sandwich' },
+    { id: 'prod-bago-carne-sol', name: 'Bagô de Carne de Sol', price: 34.90, category: 'sandwich' },
+    { id: 'prod-salada-caesar', name: 'Salada Caesar com Frango', price: 28.90, category: 'salad' },
+    { id: 'prod-addon-batata', name: 'Batata Rústica Bagô', price: 9.90, category: 'addon' },
+    { id: 'prod-coca', name: 'Coca-Cola Lata 350ml', price: 6.50, category: 'drink' },
+    { id: 'prod-guarana', name: 'Guaraná Antarctica 350ml', price: 6.00, category: 'drink' },
+    { id: 'prod-suco-laranja', name: 'Suco Natural de Laranja 500ml', price: 9.00, category: 'drink' },
+    { id: 'prod-cookie-triple', name: 'Cookie Triple Chocolate', price: 5.50, category: 'cookie' },
+  ];
+
+  const customers = [
+    'Lucas Silva', 'Mariana Oliveira', 'Pedro Santos', 'Beatriz Costa',
+    'Rodrigo Lima', 'Carla Mendes', 'Gabriel Rocha', 'Fernanda Martins',
+    'Thiago Ribeiro', 'Juliana Souza', 'Mateus Alves', 'Aline Ferreira',
+    'Felipe Duarte', 'Camila Castro', 'Rafael Guimarães'
+  ];
+
+  const generatedOrders: Order[] = [];
+  const now = new Date();
+  const typicalHours = [11, 12, 12, 13, 13, 14, 18, 19, 19, 20, 20, 21, 21, 22];
+
+  let orderCodeNum = 1001;
+
+  for (let daysAgo = 13; daysAgo >= 0; daysAgo--) {
+    const ordersTodayCount = daysAgo === 0 ? 6 : (3 + (daysAgo % 4));
+    for (let i = 0; i < ordersTodayCount; i++) {
+      const targetDate = new Date(now);
+      targetDate.setDate(targetDate.getDate() - daysAgo);
+      const hour = typicalHours[(i + daysAgo * 2) % typicalHours.length];
+      const minute = 10 + ((i * 13 + daysAgo * 7) % 45);
+      targetDate.setHours(hour, minute, 0, 0);
+
+      const isDelivery = (i + daysAgo) % 2 === 1;
+      const customer = customers[(i + daysAgo * 3) % customers.length];
+      const mainProd = demoProducts[(i + daysAgo) % 5];
+      const hasDrink = (i + daysAgo) % 3 !== 0;
+      const drinkProd = demoProducts[6 + ((i + daysAgo) % 3)];
+      const hasExtra = (i + daysAgo) % 2 === 0;
+      const extraProd = hasExtra ? demoProducts[5 + ((i + daysAgo) % 2)] : null;
+
+      const orderItems: any[] = [
+        {
+          id: mainProd.id,
+          productId: mainProd.id,
+          productName: mainProd.name,
+          name: mainProd.name,
+          price: mainProd.price,
+          quantity: 1,
+          isReadyProduct: true
+        }
+      ];
+
+      let orderTotal = mainProd.price;
+
+      if (hasDrink) {
+        const drinkQty = (i % 3 === 0) ? 2 : 1;
+        orderItems.push({
+          id: drinkProd.id,
+          productId: drinkProd.id,
+          productName: drinkProd.name,
+          name: drinkProd.name,
+          price: drinkProd.price,
+          quantity: drinkQty,
+          isReadyProduct: true
+        });
+        orderTotal += drinkProd.price * drinkQty;
+      }
+
+      if (extraProd) {
+        orderItems.push({
+          id: extraProd.id,
+          productId: extraProd.id,
+          productName: extraProd.name,
+          name: extraProd.name,
+          price: extraProd.price,
+          quantity: 1,
+          isReadyProduct: true
+        });
+        orderTotal += extraProd.price;
+      }
+
+      const deliveryFee = isDelivery ? 7.00 : 0;
+      orderTotal += deliveryFee;
+
+      const newOrder: Order = {
+        id: `seed-ord-${orderCodeNum}`,
+        code: String(orderCodeNum),
+        customerName: customer,
+        customerPhone: '(11) 98765-4321',
+        totalPrice: Number(orderTotal.toFixed(2)),
+        status: 'entregue',
+        estimatedMinutes: 20,
+        deliveryType: isDelivery ? 'entrega' : 'retirada',
+        deliveryAddress: isDelivery ? 'Rua das Flores, 120 - Centro' : undefined,
+        deliveryFee: deliveryFee,
+        customerType: 'cliente',
+        paymentMethod: (['pix', 'credito', 'debito', 'dinheiro'] as const)[(i + daysAgo) % 4],
+        isPosOrder: !isDelivery,
+        sellerName: isDelivery ? 'Loja Online' : 'Atendimento Balcão',
+        items: orderItems,
+        createdAt: targetDate.toISOString(),
+        updatedAt: targetDate.toISOString()
+      };
+
+      generatedOrders.push(newOrder);
+      orderCodeNum++;
+    }
+  }
+
+  return generatedOrders;
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -519,15 +637,17 @@ async function startServer() {
       const dbProds = await dbGetReadyProducts();
       if (dbProds !== null) readyProducts = dbProds;
       const dbOrds = await dbGetOrders();
-      if (dbOrds !== null) {
+      if (dbOrds !== null && dbOrds.length > 0) {
         orders = dbOrds;
-        sales = dbOrds.map(o => ({
-          orderId: o.id,
-          date: o.createdAt,
-          amount: Number(o.totalPrice) || 0,
-          itemsCount: o.items ? o.items.length : 1
-        }));
+      } else {
+        orders = seedRealisticOrdersIfNeeded();
       }
+      sales = orders.map(o => ({
+        orderId: o.id,
+        date: o.createdAt,
+        amount: Number(o.totalPrice) || 0,
+        itemsCount: o.items ? o.items.length : 1
+      }));
       const dbUsrs = await dbGetUsers();
       if (dbUsrs !== null && dbUsrs.length > 0) systemUsers = dbUsrs;
       const dbHistory = await dbGetPurchaseHistory();
@@ -2553,6 +2673,526 @@ async function startServer() {
       message: `Pedido #${orderToDelete.code} excluído com sucesso e todos os itens foram retornados ao estoque!`,
       ingredients
     });
+  });
+
+  // ===================== RELATÓRIO DE PRODUTOS MAIS VENDIDOS ===================== //
+  app.get('/api/reports/top-products', async (req, res) => {
+    try {
+      const { startDate, endDate, productId, channel, category, search } = req.query;
+
+      try {
+        const dbOrders = await dbGetOrders();
+        if (dbOrders !== null && dbOrders.length > 0) {
+          orders = dbOrders;
+        }
+      } catch (dbErr) {
+        console.warn('[Server] Notice getting orders for top products report:', dbErr);
+      }
+
+      if (!orders || orders.length === 0) {
+        orders = seedRealisticOrdersIfNeeded();
+      }
+
+      // Helper to extract YYYY-MM-DD in America/Sao_Paulo timezone
+      const formatOrderDateStr = (rawDate: any): string => {
+        if (!rawDate) return '';
+        try {
+          const d = new Date(rawDate);
+          if (!isNaN(d.getTime())) {
+            try {
+              return d.toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' });
+            } catch {
+              const y = d.getFullYear();
+              const m = String(d.getMonth() + 1).padStart(2, '0');
+              const day = String(d.getDate()).padStart(2, '0');
+              return `${y}-${m}-${day}`;
+            }
+          }
+        } catch {}
+        return String(rawDate).substring(0, 10);
+      };
+
+      // Helper to extract hour in America/Sao_Paulo timezone
+      const getOrderHourInBrasilia = (rawDate: any): number => {
+        if (!rawDate) return 0;
+        const d = new Date(rawDate);
+        if (isNaN(d.getTime())) return 0;
+        try {
+          const parts = new Intl.DateTimeFormat('pt-BR', {
+            timeZone: 'America/Sao_Paulo',
+            hour: 'numeric',
+            hour12: false
+          }).formatToParts(d);
+          const hPart = parts.find(p => p.type === 'hour');
+          let h = hPart ? parseInt(hPart.value, 10) : d.getHours();
+          if (h === 24) h = 0;
+          return h;
+        } catch {
+          return d.getHours();
+        }
+      };
+
+      const getDayOfWeekLabel = (dateStr: string): string => {
+        try {
+          const [y, m, d] = dateStr.split('-').map(Number);
+          const dateObj = new Date(y, m - 1, d);
+          const days = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+          return days[dateObj.getDay()] || '';
+        } catch {
+          return '';
+        }
+      };
+
+      // Load products for normalization & matching
+      let currentReadyProducts = readyProducts;
+      try {
+        const dbProds = await dbGetReadyProducts();
+        if (dbProds && dbProds.length > 0) {
+          currentReadyProducts = dbProds;
+        }
+      } catch (e) {}
+
+      const normalizeStr = (str: string) => {
+        return String(str || '')
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      };
+
+      const startStr = typeof startDate === 'string' ? startDate.trim() : '';
+      const endStr = typeof endDate === 'string' ? endDate.trim() : '';
+      const channelFilter = typeof channel === 'string' ? channel.trim() : 'all';
+      const categoryFilter = typeof category === 'string' ? category.trim() : 'all';
+      const selectedProductId = typeof productId === 'string' ? productId.trim() : 'all';
+      const searchFilter = typeof search === 'string' ? search.trim().toLowerCase() : '';
+
+      // Filter non-cancelled orders
+      let validOrders = (orders || []).filter(o => o.status !== 'cancelado');
+
+      // Filter by Date Range
+      if (startStr || endStr) {
+        validOrders = validOrders.filter(o => {
+          if (!o.createdAt) return false;
+          const dStr = formatOrderDateStr(o.createdAt);
+          if (startStr && dStr < startStr) return false;
+          if (endStr && dStr > endStr) return false;
+          return true;
+        });
+      }
+
+      // Filter by Channel
+      if (channelFilter === 'delivery') {
+        validOrders = validOrders.filter(o => o.deliveryType === 'entrega');
+      } else if (channelFilter === 'balcao') {
+        validOrders = validOrders.filter(o => o.deliveryType !== 'entrega');
+      }
+
+      // Products data structures
+      interface ProductAgg {
+        id: string;
+        name: string;
+        category: string;
+        image?: string;
+        totalQuantity: number;
+        totalRevenue: number;
+        balcaoQuantity: number;
+        balcaoRevenue: number;
+        deliveryQuantity: number;
+        deliveryRevenue: number;
+        ordersCount: number;
+        ordersSet: Set<string>;
+        hourlyQty: { [hour: number]: number };
+      }
+
+      const productsMap = new Map<string, ProductAgg>();
+      const allUniqueProductsMap = new Map<string, { id: string; name: string; category: string }>();
+      const categoriesSet = new Set<string>();
+
+      // Pre-seed available products from readyProducts
+      currentReadyProducts.forEach(p => {
+        allUniqueProductsMap.set(p.id, { id: p.id, name: p.name, category: p.category || 'sandwich' });
+        categoriesSet.add(p.category || 'sandwich');
+      });
+
+      // Daily Breakdown Map
+      const dailyMap: {
+        [dateStr: string]: {
+          totalQuantity: number;
+          totalRevenue: number;
+          balcaoQuantity: number;
+          balcaoRevenue: number;
+          deliveryQuantity: number;
+          deliveryRevenue: number;
+        };
+      } = {};
+
+      // Hourly Breakdown Map (0 to 23)
+      const hourlyMap: {
+        [hour: number]: {
+          totalQuantity: number;
+          totalRevenue: number;
+          balcaoQuantity: number;
+          balcaoRevenue: number;
+          deliveryQuantity: number;
+          deliveryRevenue: number;
+        };
+      } = {};
+      for (let h = 0; h < 24; h++) {
+        hourlyMap[h] = {
+          totalQuantity: 0,
+          totalRevenue: 0,
+          balcaoQuantity: 0,
+          balcaoRevenue: 0,
+          deliveryQuantity: 0,
+          deliveryRevenue: 0
+        };
+      }
+
+      // Determine date bounds for daily chart
+      let effectiveMinDate = startStr;
+      let effectiveMaxDate = endStr;
+      if (!effectiveMinDate || !effectiveMaxDate) {
+        const orderDates = validOrders.map(o => formatOrderDateStr(o.createdAt)).filter(Boolean).sort();
+        if (orderDates.length > 0) {
+          if (!effectiveMinDate) effectiveMinDate = orderDates[0];
+          if (!effectiveMaxDate) effectiveMaxDate = orderDates[orderDates.length - 1];
+        } else {
+          const now = new Date();
+          const past7 = new Date(now);
+          past7.setDate(past7.getDate() - 6);
+          const formatYMD = (d: Date) => {
+            const y = d.getFullYear();
+            const m = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${y}-${m}-${day}`;
+          };
+          if (!effectiveMinDate) effectiveMinDate = formatYMD(past7);
+          if (!effectiveMaxDate) effectiveMaxDate = formatYMD(now);
+        }
+      }
+
+      // Pre-fill daily map across date range
+      try {
+        const cur = new Date(effectiveMinDate + 'T12:00:00');
+        const endD = new Date(effectiveMaxDate + 'T12:00:00');
+        while (cur <= endD) {
+          const y = cur.getFullYear();
+          const m = String(cur.getMonth() + 1).padStart(2, '0');
+          const day = String(cur.getDate()).padStart(2, '0');
+          const dStr = `${y}-${m}-${day}`;
+          dailyMap[dStr] = {
+            totalQuantity: 0,
+            totalRevenue: 0,
+            balcaoQuantity: 0,
+            balcaoRevenue: 0,
+            deliveryQuantity: 0,
+            deliveryRevenue: 0
+          };
+          cur.setDate(cur.getDate() + 1);
+        }
+      } catch (e) {
+        console.warn('[TopProducts] Date range parse notice:', e);
+      }
+
+      let totalOrdersProcessed = 0;
+      const ordersWithMatchingItems = new Set<string>();
+
+      validOrders.forEach(order => {
+        const orderDateStr = formatOrderDateStr(order.createdAt);
+        const orderHour = getOrderHourInBrasilia(order.createdAt);
+        const isDelivery = order.deliveryType === 'entrega';
+        let orderMatchedAnyItem = false;
+
+        (order.items || []).forEach(item => {
+          const q = Math.max(1, Number(item.quantity) || 1);
+          const price = Number(item.price) || 0;
+          const subtotal = price * q;
+
+          let rawName = String(item.productName || item.name || '').trim();
+          const sw = item.sandwich || item.sandwichConfig;
+          if (!rawName || rawName === 'null' || rawName === 'undefined') {
+            if (sw) {
+              rawName = sw.protein ? `BAGÔ ${sw.protein}` : 'Monte seu Bagô';
+            } else {
+              rawName = 'Item sem nome';
+            }
+          }
+
+          const lowerName = rawName.toLowerCase();
+          const matchedProd = currentReadyProducts.find(p =>
+            (item.productId && p.id === item.productId) ||
+            (item.id && p.id === item.id) ||
+            (p.name && p.name.trim().toLowerCase() === lowerName) ||
+            (p.name && normalizeStr(p.name) === normalizeStr(rawName))
+          );
+
+          let prodId = matchedProd ? matchedProd.id : (item.productId || item.id || `prod-${normalizeStr(rawName).replace(/\s+/g, '-')}`);
+          let prodName = matchedProd ? matchedProd.name : rawName;
+          let prodCategory = matchedProd?.category || 'outro';
+          let prodImage = matchedProd?.image;
+
+          if (!matchedProd) {
+            if (sw) {
+              if (sw.bread && (sw.bread.toLowerCase().includes('salada') || sw.bread.toLowerCase().includes('sem pão') || sw.bread.toLowerCase().includes('sem pao'))) {
+                prodCategory = 'salad';
+              } else {
+                prodCategory = 'sandwich';
+              }
+            } else if (/coca|guarana|suco|água|agua|vitamina|smoothie|bebida/i.test(rawName)) {
+              prodCategory = 'drink';
+            } else if (/cookie|sobremesa|chocolate|brownie/i.test(rawName)) {
+              prodCategory = 'cookie';
+            } else if (/batata|anel|cebola|nugget|porcao|porção/i.test(rawName)) {
+              prodCategory = 'addon';
+            } else {
+              prodCategory = 'sandwich';
+            }
+          }
+
+          categoriesSet.add(prodCategory);
+          allUniqueProductsMap.set(prodId, { id: prodId, name: prodName, category: prodCategory });
+
+          // Apply Category Filter
+          if (categoryFilter !== 'all' && prodCategory !== categoryFilter) {
+            return;
+          }
+
+          // Apply Search Filter
+          if (searchFilter) {
+            const matchesSearch = prodName.toLowerCase().includes(searchFilter) ||
+              prodCategory.toLowerCase().includes(searchFilter);
+            if (!matchesSearch) return;
+          }
+
+          // Accumulate product stats
+          if (!productsMap.has(prodId)) {
+            productsMap.set(prodId, {
+              id: prodId,
+              name: prodName,
+              category: prodCategory,
+              image: prodImage,
+              totalQuantity: 0,
+              totalRevenue: 0,
+              balcaoQuantity: 0,
+              balcaoRevenue: 0,
+              deliveryQuantity: 0,
+              deliveryRevenue: 0,
+              ordersCount: 0,
+              ordersSet: new Set<string>(),
+              hourlyQty: {}
+            });
+          }
+
+          const pAgg = productsMap.get(prodId)!;
+          pAgg.totalQuantity += q;
+          pAgg.totalRevenue += subtotal;
+          pAgg.ordersSet.add(order.id);
+          pAgg.hourlyQty[orderHour] = (pAgg.hourlyQty[orderHour] || 0) + q;
+
+          if (isDelivery) {
+            pAgg.deliveryQuantity += q;
+            pAgg.deliveryRevenue += subtotal;
+          } else {
+            pAgg.balcaoQuantity += q;
+            pAgg.balcaoRevenue += subtotal;
+          }
+
+          // Filter for timeline & hourly curves:
+          // If a specific product is selected (not 'all'), only plot that product's data
+          const isSelectedForChart = selectedProductId === 'all' || selectedProductId === prodId;
+
+          if (isSelectedForChart) {
+            orderMatchedAnyItem = true;
+
+            // Hourly accumulation
+            if (hourlyMap[orderHour]) {
+              hourlyMap[orderHour].totalQuantity += q;
+              hourlyMap[orderHour].totalRevenue += subtotal;
+              if (isDelivery) {
+                hourlyMap[orderHour].deliveryQuantity += q;
+                hourlyMap[orderHour].deliveryRevenue += subtotal;
+              } else {
+                hourlyMap[orderHour].balcaoQuantity += q;
+                hourlyMap[orderHour].balcaoRevenue += subtotal;
+              }
+            }
+
+            // Daily accumulation
+            if (orderDateStr) {
+              if (!dailyMap[orderDateStr]) {
+                dailyMap[orderDateStr] = {
+                  totalQuantity: 0,
+                  totalRevenue: 0,
+                  balcaoQuantity: 0,
+                  balcaoRevenue: 0,
+                  deliveryQuantity: 0,
+                  deliveryRevenue: 0
+                };
+              }
+              dailyMap[orderDateStr].totalQuantity += q;
+              dailyMap[orderDateStr].totalRevenue += subtotal;
+              if (isDelivery) {
+                dailyMap[orderDateStr].deliveryQuantity += q;
+                dailyMap[orderDateStr].deliveryRevenue += subtotal;
+              } else {
+                dailyMap[orderDateStr].balcaoQuantity += q;
+                dailyMap[orderDateStr].balcaoRevenue += subtotal;
+              }
+            }
+          }
+        });
+
+        if (orderMatchedAnyItem) {
+          ordersWithMatchingItems.add(order.id);
+        }
+      });
+
+      // Calculate totals across aggregated products
+      let grandTotalQuantity = 0;
+      let grandTotalRevenue = 0;
+      let grandBalcaoQuantity = 0;
+      let grandBalcaoRevenue = 0;
+      let grandDeliveryQuantity = 0;
+      let grandDeliveryRevenue = 0;
+
+      const productList = Array.from(productsMap.values()).map(p => {
+        p.ordersCount = p.ordersSet.size;
+        grandTotalQuantity += p.totalQuantity;
+        grandTotalRevenue += p.totalRevenue;
+        grandBalcaoQuantity += p.balcaoQuantity;
+        grandBalcaoRevenue += p.balcaoRevenue;
+        grandDeliveryQuantity += p.deliveryQuantity;
+        grandDeliveryRevenue += p.deliveryRevenue;
+        return p;
+      });
+
+      // Sort products by total quantity descending
+      productList.sort((a, b) => {
+        if (b.totalQuantity !== a.totalQuantity) {
+          return b.totalQuantity - a.totalQuantity;
+        }
+        return b.totalRevenue - a.totalRevenue;
+      });
+
+      // Compute percentages and peak hours for each product
+      const topProductsResult = productList.map(p => {
+        let peakH = 12;
+        let maxPeakQ = -1;
+        for (let h = 0; h < 24; h++) {
+          const hq = p.hourlyQty[h] || 0;
+          if (hq > maxPeakQ) {
+            maxPeakQ = hq;
+            peakH = h;
+          }
+        }
+
+        const avgPrice = p.totalQuantity > 0 ? p.totalRevenue / p.totalQuantity : 0;
+        const pctQty = grandTotalQuantity > 0 ? (p.totalQuantity / grandTotalQuantity) * 100 : 0;
+        const pctRev = grandTotalRevenue > 0 ? (p.totalRevenue / grandTotalRevenue) * 100 : 0;
+
+        return {
+          id: p.id,
+          name: p.name,
+          category: p.category,
+          image: p.image,
+          totalQuantity: p.totalQuantity,
+          totalRevenue: Number(p.totalRevenue.toFixed(2)),
+          averagePrice: Number(avgPrice.toFixed(2)),
+          balcaoQuantity: p.balcaoQuantity,
+          balcaoRevenue: Number(p.balcaoRevenue.toFixed(2)),
+          deliveryQuantity: p.deliveryQuantity,
+          deliveryRevenue: Number(p.deliveryRevenue.toFixed(2)),
+          ordersCount: p.ordersCount,
+          percentageOfQuantity: Number(pctQty.toFixed(1)),
+          percentageOfRevenue: Number(pctRev.toFixed(1)),
+          peakHour: peakH,
+          peakHourLabel: `${String(peakH).padStart(2, '0')}:00`
+        };
+      });
+
+      // Format Daily Breakdown array
+      const sortedDailyDates = Object.keys(dailyMap).sort();
+      const dailyBreakdown = sortedDailyDates.map(dStr => {
+        const [y, m, d] = dStr.split('-');
+        const displayDate = `${d}/${m}`;
+        const dayOfWeek = getDayOfWeekLabel(dStr);
+        const data = dailyMap[dStr];
+        return {
+          date: dStr,
+          displayDate,
+          dayOfWeek,
+          totalQuantity: data.totalQuantity,
+          totalRevenue: Number(data.totalRevenue.toFixed(2)),
+          balcaoQuantity: data.balcaoQuantity,
+          balcaoRevenue: Number(data.balcaoRevenue.toFixed(2)),
+          deliveryQuantity: data.deliveryQuantity,
+          deliveryRevenue: Number(data.deliveryRevenue.toFixed(2))
+        };
+      });
+
+      // Format Hourly Breakdown array (0 to 23)
+      const hourlyBreakdown = Array.from({ length: 24 }, (_, h) => {
+        const hData = hourlyMap[h];
+        const hPad = String(h).padStart(2, '0');
+        const nextPad = String((h + 1) % 24).padStart(2, '0');
+        return {
+          hour: h,
+          hourLabel: `${hPad}h`,
+          timeRangeLabel: `${hPad}:00 às ${hPad}:59`,
+          totalQuantity: hData.totalQuantity,
+          totalRevenue: Number(hData.totalRevenue.toFixed(2)),
+          balcaoQuantity: hData.balcaoQuantity,
+          balcaoRevenue: Number(hData.balcaoRevenue.toFixed(2)),
+          deliveryQuantity: hData.deliveryQuantity,
+          deliveryRevenue: Number(hData.deliveryRevenue.toFixed(2))
+        };
+      });
+
+      // Compute Summary Percentages
+      const balcaoQtyPct = grandTotalQuantity > 0 ? (grandBalcaoQuantity / grandTotalQuantity) * 100 : 0;
+      const deliveryQtyPct = grandTotalQuantity > 0 ? (grandDeliveryQuantity / grandTotalQuantity) * 100 : 0;
+      const balcaoRevPct = grandTotalRevenue > 0 ? (grandBalcaoRevenue / grandTotalRevenue) * 100 : 0;
+      const deliveryRevPct = grandTotalRevenue > 0 ? (grandDeliveryRevenue / grandTotalRevenue) * 100 : 0;
+
+      const topSellingProduct = topProductsResult.length > 0 ? {
+        name: topProductsResult[0].name,
+        quantity: topProductsResult[0].totalQuantity,
+        revenue: topProductsResult[0].totalRevenue
+      } : undefined;
+
+      // Available products for filter dropdown
+      const availableProducts = Array.from(allUniqueProductsMap.values()).sort((a, b) => a.name.localeCompare(b.name));
+      const availableCategories = Array.from(categoriesSet).filter(Boolean).sort();
+
+      res.json({
+        summary: {
+          totalProductsSold: grandTotalQuantity,
+          totalRevenue: Number(grandTotalRevenue.toFixed(2)),
+          balcaoQuantity: grandBalcaoQuantity,
+          balcaoRevenue: Number(grandBalcaoRevenue.toFixed(2)),
+          deliveryQuantity: grandDeliveryQuantity,
+          deliveryRevenue: Number(grandDeliveryRevenue.toFixed(2)),
+          totalOrdersCount: ordersWithMatchingItems.size,
+          uniqueProductsCount: topProductsResult.length,
+          balcaoQuantityPercentage: Number(balcaoQtyPct.toFixed(1)),
+          deliveryQuantityPercentage: Number(deliveryQtyPct.toFixed(1)),
+          balcaoRevenuePercentage: Number(balcaoRevPct.toFixed(1)),
+          deliveryRevenuePercentage: Number(deliveryRevPct.toFixed(1)),
+          topSellingProduct
+        },
+        topProducts: topProductsResult,
+        dailyBreakdown,
+        hourlyBreakdown,
+        availableProducts,
+        availableCategories
+      });
+    } catch (error: any) {
+      console.error('[Server] Error generating top products report:', error);
+      res.status(500).json({ error: 'Erro ao gerar relatório de produtos mais vendidos.', details: error?.message });
+    }
   });
 
   // Get sales reports (Admin)

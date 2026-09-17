@@ -79,6 +79,7 @@ import {
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ClosedCashRegistersPanel } from './ClosedCashRegistersPanel';
+import { TopProductsReport } from './TopProductsReport';
 import {
   getDeliverySettings,
   saveDeliverySettings,
@@ -168,7 +169,7 @@ export default function AdminDashboard({
   onUpdateReadyProduct,
   onDeleteReadyProduct
 }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'sales' | 'cash-registers' | 'inventory' | 'steps' | 'ready-products' | 'users' | 'deliveries'>('sales');
+  const [activeTab, setActiveTab] = useState<'sales' | 'top-products' | 'cash-registers' | 'inventory' | 'steps' | 'ready-products' | 'users' | 'deliveries'>('sales');
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ReportData | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -2009,6 +2010,18 @@ export default function AdminDashboard({
           <span>Relatórios de Vendas</span>
         </button>
         <button
+          onClick={() => setActiveTab('top-products')}
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'top-products' 
+              ? 'bg-brand-green text-white font-black shadow-xs' 
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+          id="tab-top-products-btn"
+        >
+          <TrendingUp className="h-4 w-4 text-emerald-600" />
+          <span>Produtos Mais Vendidos</span>
+        </button>
+        <button
           onClick={() => setActiveTab('cash-registers')}
           className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all ${
             activeTab === 'cash-registers' 
@@ -2288,6 +2301,31 @@ export default function AdminDashboard({
                   ` (${reportStartHour || '00:00'} às ${reportEndHour || '23:59'})`
                 )}
               </strong>
+            </div>
+
+            {/* Quick Banner: Relatório de Produtos Mais Vendidos */}
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-3.5 sm:p-4 rounded-xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="bg-white/20 p-2 rounded-lg">
+                  <TrendingUp className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm text-white">
+                    Novo: Relatório de Produtos Mais Vendidos
+                  </h4>
+                  <p className="text-xs text-emerald-100 font-medium">
+                    Analise vendas por Dia, por Hora, filtre por produto e visualize o gráfico de linha (Balcão vs Delivery).
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveTab('top-products')}
+                className="px-3.5 py-1.5 bg-white hover:bg-emerald-50 text-emerald-800 rounded-lg text-xs font-black transition-all shadow-xs shrink-0 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>Acessar Relatório</span>
+                <TrendingUp className="h-3.5 w-3.5" />
+              </button>
             </div>
           </div>
 
@@ -2773,6 +2811,11 @@ export default function AdminDashboard({
             </div>
           )}
         </div>
+      )}
+
+      {/* Relatório de Produtos Mais Vendidos (Por Dia, Por Hora, Filtros, Gráfico de Linha Balcão vs Delivery) */}
+      {activeTab === 'top-products' && (
+        <TopProductsReport onBackToSales={() => setActiveTab('sales')} />
       )}
 
       {activeTab === 'inventory' && (
