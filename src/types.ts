@@ -311,6 +311,23 @@ export interface DailyProductSales {
   deliveryRevenue: number;
 }
 
+export interface WeeklyProductSales {
+  weekKey: string; // ex: "2026-W36"
+  weekNumber: number; // ex: 36
+  year: number; // ex: 2026
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  displayWeek: string; // ex: "Semana 36 (01/09 a 07/09)"
+  shortLabel: string; // ex: "Sem 36 (01/09)"
+  totalQuantity: number;
+  totalRevenue: number;
+  balcaoQuantity: number;
+  balcaoRevenue: number;
+  deliveryQuantity: number;
+  deliveryRevenue: number;
+  daysCount: number;
+}
+
 export interface HourlyProductSales {
   hour: number; // 0..23
   hourLabel: string; // ex: "18h", "19h"
@@ -321,6 +338,28 @@ export interface HourlyProductSales {
   balcaoRevenue: number;
   deliveryQuantity: number;
   deliveryRevenue: number;
+}
+
+export interface WeakestStrongestDayInfo {
+  date: string;
+  displayDate: string;
+  dayOfWeek: string;
+  totalQuantity: number;
+  totalRevenue: number;
+  balcaoQuantity: number;
+  deliveryQuantity: number;
+}
+
+export interface WeakestStrongestWeekInfo {
+  weekKey: string;
+  weekNumber: number;
+  weekLabel: string;
+  startDate: string;
+  endDate: string;
+  totalQuantity: number;
+  totalRevenue: number;
+  balcaoQuantity: number;
+  deliveryQuantity: number;
 }
 
 export interface TopProductsReportData {
@@ -342,9 +381,15 @@ export interface TopProductsReportData {
       quantity: number;
       revenue: number;
     };
+    weakestDay?: WeakestStrongestDayInfo;
+    strongestDay?: WeakestStrongestDayInfo;
+    weakestDayOfWeekName?: string;
+    weakestWeek?: WeakestStrongestWeekInfo;
+    strongestWeek?: WeakestStrongestWeekInfo;
   };
   topProducts: TopProductItem[];
   dailyBreakdown: DailyProductSales[];
+  weeklyBreakdown: WeeklyProductSales[];
   hourlyBreakdown: HourlyProductSales[];
   availableProducts: Array<{ id: string; name: string; category: string }>;
   availableCategories: string[];

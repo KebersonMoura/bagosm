@@ -2743,6 +2743,65 @@ async function startServer() {
         }
       };
 
+      // Helper for week info calculation (Monday to Sunday)
+      const getWeekInfo = (dateStr: string) => {
+        try {
+          const [y, m, d] = dateStr.split('-').map(Number);
+          const target = new Date(Date.UTC(y, m - 1, d));
+          // Day of week: 0 = Sun, 1 = Mon, ..., 6 = Sat -> Monday = 0, Sunday = 6
+          const dayNr = (target.getUTCDay() + 6) % 7;
+          const monday = new Date(target);
+          monday.setUTCDate(target.getUTCDate() - dayNr);
+          const sunday = new Date(monday);
+          sunday.setUTCDate(monday.getUTCDate() + 6);
+
+          const formatYMD = (dt: Date) => {
+            const yr = dt.getUTCFullYear();
+            const mo = String(dt.getUTCMonth() + 1).padStart(2, '0');
+            const dy = String(dt.getUTCDate()).padStart(2, '0');
+            return `${yr}-${mo}-${dy}`;
+          };
+          const formatDM = (dt: Date) => {
+            const mo = String(dt.getUTCMonth() + 1).padStart(2, '0');
+            const dy = String(dt.getUTCDate()).padStart(2, '0');
+            return `${dy}/${mo}`;
+          };
+
+          const jan4 = new Date(Date.UTC(monday.getUTCFullYear(), 0, 4));
+          const jan4DayNr = (jan4.getUTCDay() + 6) % 7;
+          const firstMondayOfYear = new Date(jan4);
+          firstMondayOfYear.setUTCDate(jan4.getUTCDate() - jan4DayNr);
+          const diffMs = monday.getTime() - firstMondayOfYear.getTime();
+          const weekNum = Math.max(1, 1 + Math.round(diffMs / (7 * 86400000)));
+
+          const startStr = formatYMD(monday);
+          const endStr = formatYMD(sunday);
+          const weekKey = `${monday.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+          const displayWeek = `Semana ${weekNum} (${formatDM(monday)} a ${formatDM(sunday)})`;
+          const shortLabel = `Sem ${weekNum} (${formatDM(monday)})`;
+
+          return {
+            weekKey,
+            weekNumber: weekNum,
+            year: monday.getUTCFullYear(),
+            startDate: startStr,
+            endDate: endStr,
+            displayWeek,
+            shortLabel
+          };
+        } catch {
+          return {
+            weekKey: dateStr,
+            weekNumber: 1,
+            year: 2026,
+            startDate: dateStr,
+            endDate: dateStr,
+            displayWeek: `Semana (${dateStr})`,
+            shortLabel: dateStr
+          };
+        }
+      };
+
       // Load products for normalization & matching
       let currentReadyProducts = readyProducts;
       try {
@@ -2829,6 +2888,26 @@ async function startServer() {
         };
       } = {};
 
+      // Weekly Breakdown Map
+      const weeklyMap: {
+        [weekKey: string]: {
+          weekKey: string;
+          weekNumber: number;
+          year: number;
+          startDate: string;
+          endDate: string;
+          displayWeek: string;
+          shortLabel: string;
+          totalQuantity: number;
+          totalRevenue: number;
+          balcaoQuantity: number;
+          balcaoRevenue: number;
+          deliveryQuantity: number;
+          deliveryRevenue: number;
+          daysCount: number;
+        };
+      } = {};
+
       // Hourly Breakdown Map (0 to 23)
       const hourlyMap: {
         [hour: number]: {
@@ -2891,6 +2970,23 @@ async function startServer() {
             deliveryQuantity: 0,
             deliveryRevenue: 0
           };
+
+          // Also pre-initialize weekly bucket
+          const wk = getWeekInfo(dStr);
+          if (!weeklyMap[wk.weekKey]) {
+            weeklyMap[wk.weekKey] = {
+              ...wk,
+              totalQuantity: 0,
+              totalRevenue: 0,
+              balcaoQuantity: 0,
+              balcaoRevenue: 0,
+              deliveryQuantity: 0,
+              deliveryRevenue: 0,
+              daysCount: 0
+            };
+          }
+          weeklyMap[wk.weekKey].daysCount += 1;
+
           cur.setDate(cur.getDate() + 1);
         }
       } catch (e) {
@@ -3041,6 +3137,30 @@ async function startServer() {
                 dailyMap[orderDateStr].balcaoQuantity += q;
                 dailyMap[orderDateStr].balcaoRevenue += subtotal;
               }
+
+              // Weekly accumulation
+              const wk = getWeekInfo(orderDateStr);
+              if (!weeklyMap[wk.weekKey]) {
+                weeklyMap[wk.weekKey] = {
+                  ...wk,
+                  totalQuantity: 0,
+                  totalRevenue: 0,
+                  balcaoQuantity: 0,
+                  balcaoRevenue: 0,
+                  deliveryQuantity: 0,
+                  deliveryRevenue: 0,
+                  daysCount: 1
+                };
+              }
+              weeklyMap[wk.weekKey].totalQuantity += q;
+              weeklyMap[wk.weekKey].totalRevenue += subtotal;
+              if (isDelivery) {
+                weeklyMap[wk.weekKey].deliveryQuantity += q;
+                weeklyMap[wk.weekKey].deliveryRevenue += subtotal;
+              } else {
+                weeklyMap[wk.weekKey].balcaoQuantity += q;
+                weeklyMap[wk.weekKey].balcaoRevenue += subtotal;
+              }
             }
           }
         });
@@ -3133,6 +3253,28 @@ async function startServer() {
         };
       });
 
+      // Format Weekly Breakdown array
+      const sortedWeekKeys = Object.keys(weeklyMap).sort();
+      const weeklyBreakdown = sortedWeekKeys.map(wKey => {
+        const w = weeklyMap[wKey];
+        return {
+          weekKey: w.weekKey,
+          weekNumber: w.weekNumber,
+          year: w.year,
+          startDate: w.startDate,
+          endDate: w.endDate,
+          displayWeek: w.displayWeek,
+          shortLabel: w.shortLabel,
+          totalQuantity: w.totalQuantity,
+          totalRevenue: Number(w.totalRevenue.toFixed(2)),
+          balcaoQuantity: w.balcaoQuantity,
+          balcaoRevenue: Number(w.balcaoRevenue.toFixed(2)),
+          deliveryQuantity: w.deliveryQuantity,
+          deliveryRevenue: Number(w.deliveryRevenue.toFixed(2)),
+          daysCount: w.daysCount
+        };
+      });
+
       // Format Hourly Breakdown array (0 to 23)
       const hourlyBreakdown = Array.from({ length: 24 }, (_, h) => {
         const hData = hourlyMap[h];
@@ -3150,6 +3292,135 @@ async function startServer() {
           deliveryRevenue: Number(hData.deliveryRevenue.toFixed(2))
         };
       });
+
+      // Weakest and strongest week calculation
+      let weakestWeek: any = undefined;
+      let strongestWeek: any = undefined;
+      if (weeklyBreakdown.length > 0) {
+        let maxWk = weeklyBreakdown[0];
+        for (const w of weeklyBreakdown) {
+          if (w.totalQuantity > maxWk.totalQuantity) {
+            maxWk = w;
+          }
+        }
+
+        // For weakest week, prefer weeks with sales > 0 if available, otherwise lowest
+        const weeksWithSales = weeklyBreakdown.filter(w => w.totalQuantity > 0);
+        let minWk = weeksWithSales.length > 0 ? weeksWithSales[0] : weeklyBreakdown[0];
+        const pool = weeksWithSales.length > 0 ? weeksWithSales : weeklyBreakdown;
+        for (const w of pool) {
+          if (w.totalQuantity < minWk.totalQuantity) {
+            minWk = w;
+          }
+        }
+
+        weakestWeek = {
+          weekKey: minWk.weekKey,
+          weekNumber: minWk.weekNumber,
+          weekLabel: minWk.displayWeek,
+          startDate: minWk.startDate,
+          endDate: minWk.endDate,
+          totalQuantity: minWk.totalQuantity,
+          totalRevenue: minWk.totalRevenue,
+          balcaoQuantity: minWk.balcaoQuantity,
+          deliveryQuantity: minWk.deliveryQuantity
+        };
+
+        strongestWeek = {
+          weekKey: maxWk.weekKey,
+          weekNumber: maxWk.weekNumber,
+          weekLabel: maxWk.displayWeek,
+          startDate: maxWk.startDate,
+          endDate: maxWk.endDate,
+          totalQuantity: maxWk.totalQuantity,
+          totalRevenue: maxWk.totalRevenue,
+          balcaoQuantity: maxWk.balcaoQuantity,
+          deliveryQuantity: maxWk.deliveryQuantity
+        };
+      }
+
+      // Weakest and strongest day calculation
+      let weakestDay: any = undefined;
+      let strongestDay: any = undefined;
+      let weakestDayOfWeekName: string | undefined = undefined;
+
+      if (dailyBreakdown.length > 0) {
+        let maxDay = dailyBreakdown[0];
+        for (const d of dailyBreakdown) {
+          if (d.totalQuantity > maxDay.totalQuantity) {
+            maxDay = d;
+          }
+        }
+
+        const daysWithSales = dailyBreakdown.filter(d => d.totalQuantity > 0);
+        let minDay = daysWithSales.length > 0 ? daysWithSales[0] : dailyBreakdown[0];
+        const dayPool = daysWithSales.length > 0 ? daysWithSales : dailyBreakdown;
+        for (const d of dayPool) {
+          if (d.totalQuantity < minDay.totalQuantity) {
+            minDay = d;
+          }
+        }
+
+        weakestDay = {
+          date: minDay.date,
+          displayDate: minDay.displayDate,
+          dayOfWeek: minDay.dayOfWeek,
+          totalQuantity: minDay.totalQuantity,
+          totalRevenue: minDay.totalRevenue,
+          balcaoQuantity: minDay.balcaoQuantity,
+          deliveryQuantity: minDay.deliveryQuantity
+        };
+
+        strongestDay = {
+          date: maxDay.date,
+          displayDate: maxDay.displayDate,
+          dayOfWeek: maxDay.dayOfWeek,
+          totalQuantity: maxDay.totalQuantity,
+          totalRevenue: maxDay.totalRevenue,
+          balcaoQuantity: maxDay.balcaoQuantity,
+          deliveryQuantity: maxDay.deliveryQuantity
+        };
+
+        // Day of week historical average analysis
+        const dayOfWeekAgg: { [dow: string]: { qty: number; count: number } } = {
+          'Dom': { qty: 0, count: 0 },
+          'Seg': { qty: 0, count: 0 },
+          'Ter': { qty: 0, count: 0 },
+          'Qua': { qty: 0, count: 0 },
+          'Qui': { qty: 0, count: 0 },
+          'Sex': { qty: 0, count: 0 },
+          'Sáb': { qty: 0, count: 0 }
+        };
+        dailyBreakdown.forEach(d => {
+          if (dayOfWeekAgg[d.dayOfWeek]) {
+            dayOfWeekAgg[d.dayOfWeek].qty += d.totalQuantity;
+            dayOfWeekAgg[d.dayOfWeek].count += 1;
+          }
+        });
+        const dowNames: { [k: string]: string } = {
+          'Dom': 'Domingo',
+          'Seg': 'Segunda-feira',
+          'Ter': 'Terça-feira',
+          'Qua': 'Quarta-feira',
+          'Qui': 'Quinta-feira',
+          'Sex': 'Sexta-feira',
+          'Sáb': 'Sábado'
+        };
+        let lowestAvg = Infinity;
+        let lowestDow = '';
+        Object.entries(dayOfWeekAgg).forEach(([dow, stat]) => {
+          if (stat.count > 0) {
+            const avg = stat.qty / stat.count;
+            if (avg < lowestAvg) {
+              lowestAvg = avg;
+              lowestDow = dow;
+            }
+          }
+        });
+        if (lowestDow && dowNames[lowestDow]) {
+          weakestDayOfWeekName = `${dowNames[lowestDow]} (média de ${lowestAvg.toFixed(1)} un/dia)`;
+        }
+      }
 
       // Compute Summary Percentages
       const balcaoQtyPct = grandTotalQuantity > 0 ? (grandBalcaoQuantity / grandTotalQuantity) * 100 : 0;
@@ -3181,10 +3452,16 @@ async function startServer() {
           deliveryQuantityPercentage: Number(deliveryQtyPct.toFixed(1)),
           balcaoRevenuePercentage: Number(balcaoRevPct.toFixed(1)),
           deliveryRevenuePercentage: Number(deliveryRevPct.toFixed(1)),
-          topSellingProduct
+          topSellingProduct,
+          weakestDay,
+          strongestDay,
+          weakestDayOfWeekName,
+          weakestWeek,
+          strongestWeek
         },
         topProducts: topProductsResult,
         dailyBreakdown,
+        weeklyBreakdown,
         hourlyBreakdown,
         availableProducts,
         availableCategories

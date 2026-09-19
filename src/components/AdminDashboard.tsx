@@ -4827,8 +4827,8 @@ export default function AdminDashboard({
                         className="mt-0.5 rounded border-purple-400 text-purple-600 focus:ring-purple-500"
                       />
                       <div>
-                        <span className="text-xs font-black block">🍟🥤 Destaque "Combo"</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe na vitrine de destaque "Combo" na Home.</span>
+                        <span className="text-xs font-black block">⭐ Destaque</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe na vitrine de destaque na Home.</span>
                       </div>
                     </label>
 
@@ -4948,10 +4948,10 @@ export default function AdminDashboard({
                           />
                           <div>
                             <span className="text-xs font-black block flex items-center gap-1.5">
-                              <span>⭐</span> Destaque na Página Inicial ("Combo")
+                              <span>⭐</span> Destaque na Página Inicial
                             </span>
                             <span className="text-[11px] text-slate-600 font-normal leading-tight block mt-0.5">
-                              Exibe em uma vitrine de destaque especial chamada "Combo" no topo da loja virtual.
+                              Exibe em uma vitrine de destaque no topo da loja virtual.
                             </span>
                           </div>
                         </label>

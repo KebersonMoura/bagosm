@@ -1746,10 +1746,10 @@ export default function CustomerSite({
   };
 
   return (
-    <div className="space-y-8 w-full max-w-full overflow-x-hidden" id="customer-site-root">
+    <div className="space-y-8 w-full max-w-full" id="customer-site-root">
       {/* View: HOME */}
       {view === 'home' && (
-        <div className="space-y-6 w-full max-w-full overflow-x-hidden" id="customer-home-view">
+        <div className="space-y-6 w-full max-w-full" id="customer-home-view">
           {/* Store Info Bar above EXPRESSO */}
           {storeInfo && storeInfo.showOnHomePage !== false && (() => {
             const mapsUrl = (storeInfo.latitude && storeInfo.longitude)
@@ -1870,7 +1870,7 @@ export default function CustomerSite({
             <div className="w-full bg-gradient-to-br from-amber-500/20 via-orange-500/10 to-amber-600/15 border-2 border-amber-400/80 rounded-3xl p-4 sm:p-6 shadow-sm space-y-4" id="combo-featured-section">
               <div className="border-b border-amber-200/80 pb-3">
                 <h3 className="font-black text-slate-950 text-base sm:text-xl uppercase tracking-tight">
-                  DESTAQUE COMBO
+                  DESTAQUE
                 </h3>
               </div>
 
@@ -1988,30 +1988,28 @@ export default function CustomerSite({
           <div className="space-y-6 w-full p-0 border-0 bg-transparent shadow-none" id="express-menu-section">
             
             {/* Header & Category Bar - Sticky at Top */}
-            <div className="sticky top-0 z-30 bg-[#ffe3ba]/95 backdrop-blur-md -mx-3 px-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 py-2.5 transition-all border-b border-amber-900/10 shadow-xs" id="express-filter-sticky-bar">
+            <div className="sticky top-0 z-40 bg-[#ffe3ba]/95 backdrop-blur-md -mx-3 px-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8 py-2.5 sm:py-3 transition-all border-b border-amber-900/20 shadow-md" id="express-filter-sticky-bar">
               {/* Subcategory Menu Select, Search Input & Card/Table View Toggle Side-by-Side */}
               <div className="w-full">
                 <div className="flex gap-2 items-center w-full">
-                  {availableExpressSubcategories.length > 0 && (
-                    <div className="relative min-w-[105px] sm:min-w-[180px] max-w-[210px] shrink-0">
-                      <select
-                        value={expressSubcategory}
-                        onChange={(e) => setExpressSubcategory(e.target.value)}
-                        className="w-full bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2.5 text-xs font-extrabold text-slate-800 focus:outline-none focus:border-brand-green shadow-2xs appearance-none truncate cursor-pointer"
-                      >
-                        <option value="all">🏷️ Subcategorias (Todas)</option>
-                        {availableExpressSubcategories.map(subcat => {
-                          const count = expressCombinedItems.filter(i => i.subcategory === subcat).length;
-                          return (
-                            <option key={subcat} value={subcat}>
-                              {subcat} ({count})
-                            </option>
-                          );
-                        })}
-                      </select>
-                      <ChevronDown className="h-3.5 w-3.5 absolute right-2.5 top-3.5 text-slate-400 pointer-events-none" />
-                    </div>
-                  )}
+                  <div className="relative min-w-[115px] sm:min-w-[190px] max-w-[220px] shrink-0">
+                    <select
+                      value={expressSubcategory}
+                      onChange={(e) => setExpressSubcategory(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl pl-3 pr-8 py-2.5 text-xs font-extrabold text-slate-800 focus:outline-none focus:border-brand-green shadow-2xs appearance-none truncate cursor-pointer"
+                    >
+                      <option value="all">🏷️ Subcategorias (Todas)</option>
+                      {availableExpressSubcategories.map(subcat => {
+                        const count = expressCombinedItems.filter(i => i.subcategory === subcat).length;
+                        return (
+                          <option key={subcat} value={subcat}>
+                            {subcat} ({count})
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <ChevronDown className="h-3.5 w-3.5 absolute right-2.5 top-3.5 text-slate-400 pointer-events-none" />
+                  </div>
 
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
@@ -2055,7 +2053,7 @@ export default function CustomerSite({
                       title="Exibir em Cards"
                     >
                       <LayoutGrid className="h-4 w-4" />
-                      <span className="hidden md:inline">Cards</span>
+                      <span className="hidden sm:inline">Cards</span>
                     </button>
                     <button
                       type="button"
@@ -2068,7 +2066,7 @@ export default function CustomerSite({
                       title="Exibir em Tabela"
                     >
                       <List className="h-4 w-4" />
-                      <span className="hidden md:inline">Tabela</span>
+                      <span className="hidden sm:inline">Tabela</span>
                     </button>
                   </div>
                 </div>
