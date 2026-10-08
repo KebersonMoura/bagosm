@@ -811,10 +811,22 @@ export default function CustomerSite({
     return Array.from(new Set(expressCombinedItems.map(item => item.subcategory))).filter(Boolean);
   }, [expressCombinedItems]);
 
+  const homePromoProducts = useMemo(() => {
+    return readyProducts.filter(p => 
+      p.showOnHome !== false && 
+      (p.isPromo === true || 
+       p.displaySection === 'promocao' || 
+       p.displaySection === 'all' || 
+       (Boolean(p.badgeText) && p.badgeText.toUpperCase().includes('PROMO')) ||
+       (Boolean(p.originalPrice) && Number(p.originalPrice) > Number(p.price)))
+    );
+  }, [readyProducts]);
+
   const homeFeaturedCombos = useMemo(() => {
     const list = readyProducts.filter(p => 
       p.showOnHome !== false && 
-      (p.showInComboSection || p.isCombo || p.displaySection === 'combo' || p.category === 'combo' || p.displaySection === 'destaques' || p.isPopular || p.displaySection === 'all')
+      (p.showInComboSection || p.isCombo || p.displaySection === 'combo' || p.category === 'combo' || p.displaySection === 'destaques' || p.isPopular) &&
+      (!p.isPromo || p.isPopular || p.displaySection === 'destaques' || p.displaySection === 'all' || (p.isCombo && p.comboItems && p.comboItems.length > 0))
     );
     if (list.length > 0) return list;
     // Fallback de segurança: Se nenhum produto estiver marcado explicitamente, exibe os mais pedidos para garantir que a janela/seção DESTAQUE nunca suma da página
@@ -1955,6 +1967,166 @@ export default function CustomerSite({
               </div>
               <div className="hidden sm:flex items-center gap-1.5 bg-white/90 border border-amber-300 px-3 py-1.5 rounded-xl text-xs font-black text-amber-900 shrink-0">
                 <span>🏬 Retirada no Balcão</span>
+              </div>
+            </div>
+          )}
+
+          {/* SEÇÃO / JANELA DE PROMOÇÃO NA PÁGINA INICIAL (ACIMA DE DESTAQUE) */}
+          {homePromoProducts.length > 0 && (
+            <div className="w-full bg-gradient-to-br from-rose-500/20 via-orange-500/10 to-amber-500/15 border-2 border-rose-400/80 rounded-3xl p-4 sm:p-6 shadow-sm space-y-4 animate-in fade-in" id="promo-featured-section">
+              <div className="border-b border-rose-200/80 pb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">🔥</span>
+                  <h3 className="font-black text-slate-950 text-base sm:text-xl uppercase tracking-tight">
+                    PROMOÇÃO
+                  </h3>
+                  <span className="bg-rose-500/20 text-rose-900 border border-rose-400/40 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase hidden sm:inline-block">
+                    Ofertas & Preços Especiais
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs font-black text-rose-700 bg-rose-50 border border-rose-200/80 px-2.5 py-1 rounded-xl shadow-2xs">
+                  <Flame className="h-3.5 w-3.5 text-rose-600 animate-pulse" />
+                  <span className="hidden xs:inline">Oferta por Tempo Limitado</span>
+                  <span className="xs:hidden">Oferta</span>
+                </div>
+              </div>
+
+              {/* Grade de Produtos em Promoção */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {homePromoProducts.map((promoItem) => {
+                  const numPrice = Number(promoItem.price) || 0;
+                  const numOrigPrice = Number(promoItem.originalPrice) || 0;
+                  const hasDiscount = Boolean(promoItem.originalPrice && numOrigPrice > numPrice);
+                  const promoImg = promoItem.image || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
+
+                  return (
+                    <div
+                      key={promoItem.id}
+                      className="bg-white rounded-2xl border-2 border-rose-200/90 shadow-md hover:shadow-xl hover:border-rose-400 transition-all overflow-hidden flex flex-col justify-between group"
+                    >
+                      {/* Imagem + Badges (Clique abre a janela de detalhes) */}
+                      <div
+                        onClick={() => handleProductClick({ rawReadyProduct: promoItem, ...promoItem })}
+                        className="relative h-44 sm:h-48 overflow-hidden bg-slate-100 cursor-pointer group/img"
+                        title="Clique para abrir a janela de detalhes desta promoção"
+                      >
+                        <img
+                          src={promoImg}
+                          alt={promoItem.name}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="bg-white/95 text-slate-900 text-xs font-black px-3 py-1.5 rounded-xl shadow-md flex items-center gap-1.5 transform translate-y-1 group-hover/img:translate-y-0 transition-transform">
+                            <Flame className="h-3.5 w-3.5 text-rose-600" /> Abrir Janela
+                          </span>
+                        </div>
+                        <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
+                          <span className="bg-rose-600 text-white font-black text-[10px] px-2 py-1 rounded-lg shadow-md uppercase flex items-center gap-1">
+                            <Flame className="h-3 w-3" /> {promoItem.badgeText || 'PROMOÇÃO'}
+                          </span>
+                        </div>
+
+                        {hasDiscount && (
+                          <div className="absolute top-2.5 right-2.5 bg-rose-600 text-white font-black text-xs px-2 py-1 rounded-lg shadow-md">
+                            -{Math.round(((numOrigPrice - numPrice) / numOrigPrice) * 100)}%
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Conteúdo */}
+                      <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
+                        <div>
+                          <h4
+                            onClick={() => handleProductClick({ rawReadyProduct: promoItem, ...promoItem })}
+                            className="font-black text-slate-900 text-base sm:text-lg leading-snug group-hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Clique para abrir a janela de detalhes deste produto em promoção"
+                          >
+                            {promoItem.name}
+                          </h4>
+
+                          {/* Se for combo com itens inclusos */}
+                          {promoItem.comboItems && promoItem.comboItems.length > 0 ? (
+                            <div className="mt-2 bg-rose-50/90 border border-rose-200/80 rounded-xl p-2.5 space-y-1.5">
+                              <span className="text-[10px] font-black text-rose-900 uppercase tracking-wider block">
+                                Incluso no Combo:
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {promoItem.comboItems.map((ci, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="bg-white text-slate-800 border border-rose-300 text-[11px] font-extrabold px-2 py-0.5 rounded-md shadow-2xs flex items-center gap-1"
+                                  >
+                                    <span>🥤</span> {ci.quantity || 1}x {ci.name}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : promoItem.sandwichConfig ? (
+                            <div className="mt-2 bg-rose-50/70 border border-rose-200/60 rounded-xl p-2.5 space-y-1 text-slate-700 text-xs">
+                              <span className="text-[10px] font-black text-rose-900 uppercase tracking-wider block">
+                                Composição:
+                              </span>
+                              <p className="text-[11px] font-medium leading-relaxed">
+                                {[
+                                  promoItem.sandwichConfig.bread && `Pão ${promoItem.sandwichConfig.bread}`,
+                                  promoItem.sandwichConfig.protein && promoItem.sandwichConfig.protein,
+                                  promoItem.sandwichConfig.cheese && promoItem.sandwichConfig.cheese,
+                                  promoItem.sandwichConfig.veggies?.length ? promoItem.sandwichConfig.veggies.join(', ') : null
+                                ].filter(Boolean).join(' • ')}
+                              </p>
+                            </div>
+                          ) : (
+                            promoItem.description && (
+                              <p className="text-xs text-slate-600 font-medium line-clamp-2 mt-1.5">
+                                {promoItem.description}
+                              </p>
+                            )
+                          )}
+                        </div>
+
+                        {/* Preço e Botão de Adicionar na Sacola + Janela */}
+                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                          <div>
+                            <span className="text-[10px] font-bold text-rose-500 block uppercase">Preço Promocional</span>
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="text-lg sm:text-xl font-black text-brand-green">
+                                R$ {numPrice.toFixed(2).replace('.', ',')}
+                              </span>
+                              {hasDiscount && (
+                                <span className="text-xs text-slate-400 line-through">
+                                  R$ {numOrigPrice.toFixed(2).replace('.', ',')}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleProductClick({ rawReadyProduct: promoItem, ...promoItem })}
+                              className="bg-rose-100 hover:bg-rose-200 text-rose-950 font-black text-xs px-2.5 py-2.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer shrink-0 border border-rose-300 shadow-2xs"
+                              title="Abrir janela de detalhes e opções do item em promoção"
+                            >
+                              <Flame className="h-3.5 w-3.5 text-rose-600" />
+                              <span className="hidden xs:inline">Janela</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAddComboToCart(promoItem)}
+                              className="bg-brand-green hover:bg-brand-green-dark text-white font-black text-xs sm:text-sm px-3.5 py-2.5 rounded-xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                              title="Adicionar na sacola"
+                            >
+                              <ShoppingBag className="h-4 w-4 text-brand-yellow" />
+                              <span>Adicionar na sacola</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -3956,7 +4128,9 @@ export default function CustomerSite({
                 <X className="h-4 w-4" />
               </button>
               <span className="bg-brand-yellow text-brand-green text-[10px] font-black uppercase px-2 py-0.5 rounded-sm">
-                {quickBuyProduct.isCombo ? '⭐ Janela Destaque • Combo' : (quickBuyProduct.showInComboSection || quickBuyProduct.displaySection === 'destaques' ? '⭐ Janela Destaque' : 'Compra Expresso')}
+                {quickBuyProduct.isPromo || quickBuyProduct.displaySection === 'promocao' 
+                  ? '🔥 Janela Promoção • Oferta' 
+                  : (quickBuyProduct.isCombo ? '⭐ Janela Destaque • Combo' : (quickBuyProduct.showInComboSection || quickBuyProduct.displaySection === 'destaques' ? '⭐ Janela Destaque' : 'Compra Expresso'))}
               </span>
               <h3 className="text-lg sm:text-xl font-bold mt-1.5">{quickBuyProduct.name}</h3>
             </div>
@@ -4048,6 +4222,37 @@ export default function CustomerSite({
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Detalhes de Composição do Sanduíche se houver */}
+                  {quickBuyProduct.sandwichConfig && (
+                    <div className="bg-emerald-50/90 border border-emerald-200/90 rounded-xl p-3 space-y-1 text-slate-800 text-xs">
+                      <span className="font-black text-emerald-950 uppercase text-[10px] block tracking-wide">
+                        Composição do Item:
+                      </span>
+                      <p className="text-[11px] font-medium leading-relaxed text-slate-700">
+                        {[
+                          quickBuyProduct.sandwichConfig.bread && `Pão: ${quickBuyProduct.sandwichConfig.bread}`,
+                          quickBuyProduct.sandwichConfig.protein && `Proteína: ${quickBuyProduct.sandwichConfig.protein}`,
+                          quickBuyProduct.sandwichConfig.cheese && `Queijo: ${quickBuyProduct.sandwichConfig.cheese}`,
+                          quickBuyProduct.sandwichConfig.veggies?.length ? `Saladas: ${quickBuyProduct.sandwichConfig.veggies.join(', ')}` : null,
+                          quickBuyProduct.sandwichConfig.sauces?.length ? `Molhos: ${quickBuyProduct.sandwichConfig.sauces.join(', ')}` : null
+                        ].filter(Boolean).join(' • ')}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Informação de Promoção se houver */}
+                  {Boolean(quickBuyProduct.isPromo || quickBuyProduct.displaySection === 'promocao') && (
+                    <div className="bg-rose-50 border border-rose-200 rounded-xl p-2.5 flex items-center justify-between text-xs">
+                      <span className="font-black text-rose-800 flex items-center gap-1.5">
+                        <Flame className="h-3.5 w-3.5 text-rose-600 animate-pulse" />
+                        <span>Preço Especial de Promoção</span>
+                      </span>
+                      <span className="bg-rose-600 text-white font-black text-[10px] px-2 py-0.5 rounded-full uppercase">
+                        {quickBuyProduct.badgeText || 'Oferta'}
+                      </span>
                     </div>
                   )}
 
