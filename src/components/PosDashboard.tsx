@@ -2427,6 +2427,8 @@ export default function PosDashboard({
           }
           lineCashReceived = cashVal;
           lineChangeAmount = cashVal - val;
+          finalCashReceived = (finalCashReceived || 0) + cashVal;
+          finalChangeAmount = (finalChangeAmount || 0) + lineChangeAmount;
         }
 
         totalSplitAmount += val;

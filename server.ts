@@ -2266,27 +2266,74 @@ async function startServer() {
     });
 
     for (const order of sessionOrders) {
-      const existing = session.transactions.some(tx => tx.orderId === order.id || (tx.id && tx.id.includes(order.id)));
-      if (!existing) {
-        const isDelivery = order.deliveryType === 'entrega';
-        const channel: 'delivery' | 'balcao' = isDelivery ? 'delivery' : 'balcao';
-        const channelLabel = isDelivery ? 'Delivery' : (order.isPosOrder ? 'Balcão PDV' : 'Balcão/Retirada');
+      const isDelivery = order.deliveryType === 'entrega';
+      const channel: 'delivery' | 'balcao' = isDelivery ? 'delivery' : 'balcao';
+      const channelLabel = isDelivery ? 'Delivery' : (order.isPosOrder ? 'Balcão PDV' : 'Balcão/Retirada');
 
-        if (order.paymentSplits && order.paymentSplits.length > 0) {
-          order.paymentSplits.forEach((split, idx) => {
+      // Check current transactions belonging to this order
+      const existingTxs = session.transactions.filter(tx => 
+        tx.orderId === order.id || (tx.id && (tx.id === `tx-ord-${order.id}` || tx.id.startsWith(`tx-ord-${order.id}-`)))
+      );
+
+      const hasSplits = Boolean(order.paymentSplits && order.paymentSplits.length > 0);
+      const expectedCount = hasSplits ? order.paymentSplits!.length : 1;
+
+      // Check if existing transactions match exactly
+      let isMatches = existingTxs.length === expectedCount;
+      if (isMatches) {
+        if (hasSplits) {
+          for (let i = 0; i < order.paymentSplits!.length; i++) {
+            const sp = order.paymentSplits![i];
+            const tx = existingTxs[i];
+            const expMethod = normalizePaymentMethodStr(sp.method || order.paymentMethod);
+            if (!tx || Math.abs(tx.amount - (Number(sp.amount) || 0)) > 0.01 || tx.paymentMethod !== expMethod) {
+              isMatches = false;
+              break;
+            }
+          }
+        } else {
+          const expMethod = normalizePaymentMethodStr(order.paymentMethod);
+          if (Math.abs(existingTxs[0].amount - (Number(order.totalPrice) || 0)) > 0.01 || existingTxs[0].paymentMethod !== expMethod) {
+            isMatches = false;
+          }
+        }
+      }
+
+      if (!isMatches) {
+        // Remove old/stale transactions for this order to replace with fresh accurate split records
+        session.transactions = session.transactions.filter(tx => 
+          tx.orderId !== order.id && (!tx.id || (tx.id !== `tx-ord-${order.id}` && !tx.id.startsWith(`tx-ord-${order.id}-`)))
+        );
+
+        if (hasSplits) {
+          order.paymentSplits!.forEach((split, idx) => {
+            const normMethod = normalizePaymentMethodStr(split.method || order.paymentMethod);
+            const methodLabelMap: Record<string, string> = {
+              debito: 'Débito',
+              credito: 'Crédito',
+              pix: 'PIX',
+              dinheiro: 'Dinheiro',
+              vr: 'VR'
+            };
+            const mLabel = methodLabelMap[normMethod] || normMethod.toUpperCase();
+            const providerLabel = split.cardProvider ? ` (${split.cardProvider.toUpperCase()})` : '';
+            const splitInfo = order.paymentSplits!.length > 1 
+              ? ` [Fração ${idx + 1}/${order.paymentSplits!.length}: ${mLabel}${providerLabel}]` 
+              : '';
+
             session.transactions.push({
               id: `tx-ord-${order.id}-${idx}`,
               type: 'sale',
               amount: Number(split.amount) || 0,
-              description: `Venda ${channelLabel} - Pedido #${order.code}`,
+              description: `Venda ${channelLabel} - Pedido #${order.code}${splitInfo}`,
               timestamp: order.createdAt,
-              paymentMethod: normalizePaymentMethodStr(split.method || order.paymentMethod),
+              paymentMethod: normMethod,
               cardProvider: split.cardProvider || order.cardProvider,
               machineModel: split.machineModel || order.machineModel,
               orderId: order.id,
               orderCode: order.code,
               deliveryType: order.deliveryType,
-              deliveryFee: isDelivery ? (Number(order.deliveryFee) || 0) : 0,
+              deliveryFee: (isDelivery && idx === 0) ? (Number(order.deliveryFee) || 0) : 0,
               isPosOrder: order.isPosOrder,
               channel: channel
             });

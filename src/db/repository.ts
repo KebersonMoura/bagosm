@@ -1,5 +1,5 @@
 import { query, getDbStatus } from './mysql';
-import { Ingredient, Order, OrderStatus, ReadyProduct, CustomizerStep, CashRegisterSession, CashTransaction, User, PurchaseRecord, PurchaseInvoice, PurchaseInvoiceItem, DeliveryTableRow, CustomSandwich, CardMachine } from '../types';
+import { Ingredient, Order, OrderStatus, ReadyProduct, CustomizerStep, CashRegisterSession, CashTransaction, User, PurchaseRecord, PurchaseInvoice, PurchaseInvoiceItem, DeliveryTableRow, CustomSandwich, CardMachine, PaymentSplit } from '../types';
 
 /**
  * Safely converts datetime from MySQL (which is stored in Brasília time UTC-3) into a standard ISO-8601 string with Brasília offset
@@ -122,6 +122,21 @@ export async function initDatabaseTables(): Promise<boolean> {
         // Column may already exist
       }
       try {
+        await query(`ALTER TABLE orders MODIFY COLUMN payment_method VARCHAR(150) DEFAULT NULL`);
+      } catch (e) {
+        // Column may already be varchar
+      }
+      try {
+        await query(`ALTER TABLE orders ADD COLUMN payment_splits_json LONGTEXT DEFAULT NULL`);
+      } catch (e) {
+        // Column may already exist
+      }
+      try {
+        await query(`ALTER TABLE entregas_detalhadas MODIFY COLUMN forma_pagamento VARCHAR(255) DEFAULT NULL`);
+      } catch (e) {
+        // Column may already be varchar(255)
+      }
+      try {
         await query(`
           CREATE TABLE IF NOT EXISTS purchase_history (
             id VARCHAR(50) PRIMARY KEY,
@@ -228,7 +243,7 @@ export async function initDatabaseTables(): Promise<boolean> {
         delivery_fee DECIMAL(10,2) DEFAULT 0.00,
         delivery_distance_km DECIMAL(10,2) DEFAULT 0.00,
         customer_type ENUM('cliente', 'funcionario') NOT NULL DEFAULT 'cliente',
-        payment_method ENUM('debito', 'credito', 'pix', 'dinheiro') DEFAULT NULL,
+        payment_method VARCHAR(150) DEFAULT NULL,
         cash_received DECIMAL(10,2) DEFAULT NULL,
         change_amount DECIMAL(10,2) DEFAULT NULL,
         need_change TINYINT(1) DEFAULT 0,
@@ -238,6 +253,7 @@ export async function initDatabaseTables(): Promise<boolean> {
         table_number VARCHAR(20) DEFAULT NULL,
         card_provider VARCHAR(50) DEFAULT NULL,
         machine_model VARCHAR(50) DEFAULT NULL,
+        payment_splits_json LONGTEXT DEFAULT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -778,6 +794,15 @@ export async function dbGetOrders(): Promise<Order[] | null> {
         };
       });
 
+      let splits: PaymentSplit[] | undefined = undefined;
+      if (r.payment_splits_json) {
+        try {
+          splits = typeof r.payment_splits_json === 'string' ? JSON.parse(r.payment_splits_json) : r.payment_splits_json;
+        } catch (e) {
+          splits = undefined;
+        }
+      }
+
       return {
         id: r.id,
         code: r.code,
@@ -805,6 +830,7 @@ export async function dbGetOrders(): Promise<Order[] | null> {
         printReceipt: Boolean(r.print_receipt),
         couponCode: r.coupon_code || undefined,
         discountAmount: r.discount_amount ? Number(r.discount_amount) : undefined,
+        paymentSplits: splits,
         items
       };
     });
@@ -817,13 +843,17 @@ export async function dbGetOrders(): Promise<Order[] | null> {
 }
 
 async function executeSaveOrder(order: Order): Promise<boolean> {
+  const splitsJson = order.paymentSplits && order.paymentSplits.length > 0 
+    ? JSON.stringify(order.paymentSplits) 
+    : null;
+
   await query(`
     INSERT INTO orders (
       id, code, customer_name, customer_phone, total_price, status, estimated_minutes, 
       delivery_type, delivery_address, delivery_fee, delivery_distance_km, customer_type, payment_method, cash_received, 
       change_amount, need_change, change_for_amount, print_receipt, is_pos_order, 
-      table_number, card_provider, machine_model, coupon_code, discount_amount, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      table_number, card_provider, machine_model, coupon_code, discount_amount, payment_splits_json, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
     ON DUPLICATE KEY UPDATE
       customer_name = VALUES(customer_name),
       customer_phone = VALUES(customer_phone),
@@ -847,6 +877,7 @@ async function executeSaveOrder(order: Order): Promise<boolean> {
       machine_model = VALUES(machine_model),
       coupon_code = VALUES(coupon_code),
       discount_amount = VALUES(discount_amount),
+      payment_splits_json = VALUES(payment_splits_json),
       updated_at = NOW()
   `, [
     order.id,
@@ -872,7 +903,8 @@ async function executeSaveOrder(order: Order): Promise<boolean> {
     order.cardProvider || null,
     order.machineModel || null,
     order.couponCode || null,
-    order.discountAmount || 0
+    order.discountAmount || 0,
+    splitsJson
   ]);
 
   // Clean old items for this order to ensure fresh state
@@ -949,6 +981,10 @@ export async function dbUpdateOrderStatus(orderId: string, status: OrderStatus, 
 
 export async function dbUpdateOrder(order: Order): Promise<boolean> {
   try {
+    const splitsJson = order.paymentSplits && order.paymentSplits.length > 0 
+      ? JSON.stringify(order.paymentSplits) 
+      : null;
+
     await query(`
       UPDATE orders
       SET customer_name = ?,
@@ -971,6 +1007,7 @@ export async function dbUpdateOrder(order: Order): Promise<boolean> {
           table_number = ?,
           card_provider = ?,
           machine_model = ?,
+          payment_splits_json = ?,
           updated_at = NOW()
       WHERE id = ?
     `, [
@@ -994,6 +1031,7 @@ export async function dbUpdateOrder(order: Order): Promise<boolean> {
       order.tableNumber || null,
       order.cardProvider || null,
       order.machineModel || null,
+      splitsJson,
       order.id
     ]);
 

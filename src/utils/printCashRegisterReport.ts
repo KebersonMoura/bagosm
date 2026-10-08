@@ -49,6 +49,17 @@ export function formatMachineName(cardProvider?: string, machineModel?: string):
   return parts.join(' - ');
 }
 
+export function normalizeCashPaymentMethod(pm?: string): 'dinheiro' | 'debito' | 'credito' | 'pix' | 'vr' {
+  if (!pm) return 'debito';
+  const clean = String(pm).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  if (clean.includes('dinheiro') || clean.includes('cash') || clean.includes('especie')) return 'dinheiro';
+  if (clean.includes('pix')) return 'pix';
+  if (clean.includes('credito') || clean.includes('credit')) return 'credito';
+  if (clean.includes('refeicao') || clean.includes('vale') || clean.includes('vr') || clean.includes('alelo') || clean.includes('sodexo') || clean.includes('ticket')) return 'vr';
+  if (clean.includes('debito') || clean.includes('debit')) return 'debito';
+  return 'debito';
+}
+
 export function getCashSessionMetrics(
   session: CashRegisterSession | null,
   ordersList: Order[] = []
@@ -141,7 +152,7 @@ export function getCashSessionMetrics(
     if (t.type !== 'sale') return;
     const amount = Number(t.amount) || 0;
     const isDelivery = t.channel === 'delivery' || t.deliveryType === 'entrega';
-    const pm = (t.paymentMethod || '').toLowerCase();
+    const pm = normalizeCashPaymentMethod(t.paymentMethod);
     const machKey = formatMachineName(t.cardProvider, t.machineModel);
 
     if (isDelivery) {
@@ -152,9 +163,11 @@ export function getCashSessionMetrics(
       else if (pm === 'credito') deliveryCredito += amount;
       else if (pm === 'pix') deliveryPix += amount;
       else if (pm === 'vr') deliveryVr += amount;
+      else deliveryDebito += amount;
 
-      if (machKey) {
-        deliveryMachineTotals[machKey] = (deliveryMachineTotals[machKey] || 0) + amount;
+      if (machKey || pm !== 'dinheiro') {
+        const mLabel = machKey || 'Sem Maquininha Especificada';
+        deliveryMachineTotals[mLabel] = (deliveryMachineTotals[mLabel] || 0) + amount;
       }
     } else {
       counterTxs.push(t);
@@ -164,14 +177,17 @@ export function getCashSessionMetrics(
       else if (pm === 'credito') counterCredito += amount;
       else if (pm === 'pix') counterPix += amount;
       else if (pm === 'vr') counterVr += amount;
+      else counterDebito += amount;
 
-      if (machKey) {
-        counterMachineTotals[machKey] = (counterMachineTotals[machKey] || 0) + amount;
+      if (machKey || pm !== 'dinheiro') {
+        const mLabel = machKey || 'Sem Maquininha Especificada';
+        counterMachineTotals[mLabel] = (counterMachineTotals[mLabel] || 0) + amount;
       }
     }
 
-    if (machKey) {
-      machineTotals[machKey] = (machineTotals[machKey] || 0) + amount;
+    if (machKey || pm !== 'dinheiro') {
+      const mLabel = machKey || 'Sem Maquininha Especificada';
+      machineTotals[mLabel] = (machineTotals[mLabel] || 0) + amount;
     }
   });
 
