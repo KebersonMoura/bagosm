@@ -638,7 +638,7 @@ export default function CustomerSite({
     setIsCartOpen(true);
   };
 
-  const handleAddComboToCart = (item: any) => {
+  const handleAddComboToCart = (item: any, quantity: number = 1) => {
     const raw = item.rawReadyProduct || item;
     const numPrice = Number(raw.price) || 0;
     const comboImg = raw.image || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
@@ -659,12 +659,25 @@ export default function CustomerSite({
       drinksAndCookies: comboDrinksAndCookies
     } : undefined);
 
-    addToQuickCart({
-      name: raw.name,
-      price: numPrice,
-      image: comboImg,
-      sandwichConfig: formattedConfig
+    const qtyToAdd = Math.max(1, Number(quantity) || Number(item.quantity) || 1);
+
+    setQuickCart(prev => {
+      const existing = prev.find(p => p.name === raw.name);
+      if (existing) {
+        return prev.map(p => p.name === raw.name ? { ...p, quantity: p.quantity + qtyToAdd } : p);
+      }
+      return [...prev, {
+        id: `cart-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+        name: raw.name,
+        price: numPrice,
+        image: comboImg,
+        sandwichConfig: formattedConfig,
+        quantity: qtyToAdd
+      }];
     });
+    setCheckoutStep(1);
+    setOrderError('');
+    setIsCartOpen(true);
   };
 
   const handleProductClick = (item: any) => {
@@ -676,28 +689,32 @@ export default function CustomerSite({
       item.showInComboSection ||
       item.rawReadyProduct?.showInComboSection ||
       item.category === 'combo' ||
-      item.rawReadyProduct?.category === 'combo'
+      item.rawReadyProduct?.category === 'combo' ||
+      item.displaySection === 'destaques' ||
+      item.rawReadyProduct?.displaySection === 'destaques' ||
+      item.displaySection === 'combo' ||
+      item.rawReadyProduct?.displaySection === 'combo'
     );
     const isBuildItem = !isCombo && (item.category === 'sandwich' || item.category === 'salad' || item.rawReadyProduct?.category === 'sandwich' || item.rawReadyProduct?.category === 'salad');
     if (isBuildItem) {
       setBuildModalFormat(item.category === 'salad' || item.rawReadyProduct?.category === 'salad' ? 'salad' : 'sandwich');
       setBuildModalProduct(item.rawReadyProduct || null);
       setIsBuildModalOpen(true);
-    } else if (isCombo) {
-      handleAddComboToCart(item);
     } else {
+      // Abre a janela de detalhes / compra rápida do item ou combo em destaque
       const readyProd: ReadyProduct = item.rawReadyProduct || {
         id: item.id || `prod-${Date.now()}`,
         name: item.name,
         description: item.description || '',
         price: Number(item.price) || 0,
+        originalPrice: item.originalPrice ? Number(item.originalPrice) : item.rawReadyProduct?.originalPrice,
         category: item.category as any,
         image: item.image,
         isAvailable: true,
         isCombo: isCombo,
-        comboItems: item.comboItems || [],
+        comboItems: item.comboItems || item.rawReadyProduct?.comboItems || [],
         skipIngredients: true,
-        showInComboSection: Boolean(item.showInComboSection)
+        showInComboSection: Boolean(item.showInComboSection || item.rawReadyProduct?.showInComboSection)
       };
       setQuickBuyProduct(readyProd);
       setQuickBuyQty(1);
@@ -795,10 +812,13 @@ export default function CustomerSite({
   }, [expressCombinedItems]);
 
   const homeFeaturedCombos = useMemo(() => {
-    return readyProducts.filter(p => 
+    const list = readyProducts.filter(p => 
       p.showOnHome !== false && 
-      (p.showInComboSection || p.isCombo || p.displaySection === 'combo' || p.category === 'combo')
+      (p.showInComboSection || p.isCombo || p.displaySection === 'combo' || p.category === 'combo' || p.displaySection === 'destaques' || p.isPopular || p.displaySection === 'all')
     );
+    if (list.length > 0) return list;
+    // Fallback de segurança: Se nenhum produto estiver marcado explicitamente, exibe os mais pedidos para garantir que a janela/seção DESTAQUE nunca suma da página
+    return readyProducts.filter(p => p.showOnHome !== false && (p.isPopular || p.category === 'sandwich')).slice(0, 3);
   }, [readyProducts]);
 
   const groupedBySubcategory = useMemo(() => {
@@ -1942,10 +1962,16 @@ export default function CustomerSite({
           {/* SEÇÃO DE DESTAQUE NA PÁGINA INICIAL CHAMADA "COMBO" */}
           {homeFeaturedCombos.length > 0 && (
             <div className="w-full bg-gradient-to-br from-amber-500/20 via-orange-500/10 to-amber-600/15 border-2 border-amber-400/80 rounded-3xl p-4 sm:p-6 shadow-sm space-y-4" id="combo-featured-section">
-              <div className="border-b border-amber-200/80 pb-3">
-                <h3 className="font-black text-slate-950 text-base sm:text-xl uppercase tracking-tight">
-                  DESTAQUE
-                </h3>
+              <div className="border-b border-amber-200/80 pb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">⭐</span>
+                  <h3 className="font-black text-slate-950 text-base sm:text-xl uppercase tracking-tight">
+                    DESTAQUE
+                  </h3>
+                  <span className="bg-amber-500/20 text-amber-900 border border-amber-400/40 text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase hidden sm:inline-block">
+                    Combos & Destaques da Casa
+                  </span>
+                </div>
               </div>
 
               {/* Grade de Combos em Destaque */}
@@ -1961,11 +1987,11 @@ export default function CustomerSite({
                       key={combo.id}
                       className="bg-white rounded-2xl border-2 border-amber-200/90 shadow-md hover:shadow-xl hover:border-amber-400 transition-all overflow-hidden flex flex-col justify-between group"
                     >
-                      {/* Imagem + Badges */}
+                      {/* Imagem + Badges (Clique abre a janela de destaque) */}
                       <div
-                        onClick={() => handleAddComboToCart(combo)}
-                        className="relative h-44 sm:h-48 overflow-hidden bg-slate-100 cursor-pointer"
-                        title="Clique para adicionar este combo na sacola"
+                        onClick={() => handleProductClick({ rawReadyProduct: combo, ...combo })}
+                        className="relative h-44 sm:h-48 overflow-hidden bg-slate-100 cursor-pointer group/img"
+                        title="Clique para abrir a janela de detalhes deste item em destaque"
                       >
                         <img
                           src={comboImg}
@@ -1973,6 +1999,11 @@ export default function CustomerSite({
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           referrerPolicy="no-referrer"
                         />
+                        <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
+                          <span className="bg-white/95 text-slate-900 text-xs font-black px-3 py-1.5 rounded-xl shadow-md flex items-center gap-1.5 transform translate-y-1 group-hover/img:translate-y-0 transition-transform">
+                            <Sparkles className="h-3.5 w-3.5 text-amber-500" /> Abrir Janela
+                          </span>
+                        </div>
                         {combo.badgeText && (
                           <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
                             <span className="bg-slate-950 text-white font-black text-[10px] px-2 py-1 rounded-lg shadow-md uppercase">
@@ -1992,9 +2023,9 @@ export default function CustomerSite({
                       <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                         <div>
                           <h4
-                            onClick={() => handleAddComboToCart(combo)}
+                            onClick={() => handleProductClick({ rawReadyProduct: combo, ...combo })}
                             className="font-black text-slate-900 text-base sm:text-lg leading-snug group-hover:text-amber-600 transition-colors cursor-pointer"
-                            title="Clique para adicionar este combo na sacola"
+                            title="Clique para abrir a janela de detalhes deste item em destaque"
                           >
                             {combo.name}
                           </h4>
@@ -2025,7 +2056,7 @@ export default function CustomerSite({
                           )}
                         </div>
 
-                        {/* Preço e Botão de Adicionar na Sacola */}
+                        {/* Preço e Botão de Adicionar na Sacola + Janela */}
                         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                           <div>
                             <span className="text-[10px] font-bold text-slate-400 block uppercase">Preço Combo</span>
@@ -2041,15 +2072,27 @@ export default function CustomerSite({
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => handleAddComboToCart(combo)}
-                            className="bg-brand-green hover:bg-brand-green-dark text-white font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                            title="Adicionar na sacola"
-                          >
-                            <ShoppingBag className="h-4 w-4 text-brand-yellow" />
-                            <span>Adicionar na sacola</span>
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleProductClick({ rawReadyProduct: combo, ...combo })}
+                              className="bg-amber-100 hover:bg-amber-200 text-amber-950 font-black text-xs px-2.5 py-2.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer shrink-0 border border-amber-300 shadow-2xs"
+                              title="Abrir janela de detalhes e opções do item em destaque"
+                            >
+                              <Sparkles className="h-3.5 w-3.5 text-amber-600" />
+                              <span className="hidden xs:inline">Janela</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleAddComboToCart(combo)}
+                              className="bg-brand-green hover:bg-brand-green-dark text-white font-black text-xs sm:text-sm px-3.5 py-2.5 rounded-xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                              title="Adicionar na sacola"
+                            >
+                              <ShoppingBag className="h-4 w-4 text-brand-yellow" />
+                              <span>Adicionar na sacola</span>
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -3912,8 +3955,10 @@ export default function CustomerSite({
               >
                 <X className="h-4 w-4" />
               </button>
-              <span className="bg-brand-yellow text-brand-green text-[10px] font-black uppercase px-2 py-0.5 rounded-sm">Compra Expresso</span>
-              <h3 className="text-lg sm:text-xl font-bold mt-1.5">Confirmar Seu Pedido</h3>
+              <span className="bg-brand-yellow text-brand-green text-[10px] font-black uppercase px-2 py-0.5 rounded-sm">
+                {quickBuyProduct.isCombo ? '⭐ Janela Destaque • Combo' : (quickBuyProduct.showInComboSection || quickBuyProduct.displaySection === 'destaques' ? '⭐ Janela Destaque' : 'Compra Expresso')}
+              </span>
+              <h3 className="text-lg sm:text-xl font-bold mt-1.5">{quickBuyProduct.name}</h3>
             </div>
             
             {/* Stepper Progress Bar Header */}
@@ -4242,18 +4287,33 @@ export default function CustomerSite({
                   <button
                     type="button"
                     onClick={() => { setQuickBuyProduct(null); setCheckoutStep(1); setOrderError(''); }}
-                    className="flex-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold py-3 rounded-xl text-center text-xs transition-all cursor-pointer"
+                    className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold px-3 py-3 rounded-xl text-center text-xs transition-all cursor-pointer"
                   >
-                    Cancelar
+                    Fechar
                   </button>
                   <button
+                    type="button"
+                    onClick={() => {
+                      handleAddComboToCart(quickBuyProduct, quickBuyQty);
+                      setQuickBuyProduct(null);
+                      setCheckoutStep(1);
+                      setOrderError('');
+                    }}
+                    className="flex-1 bg-brand-green hover:bg-brand-green-dark text-white font-black py-3 rounded-xl text-center text-xs transition-all shadow-md active:scale-98 flex items-center justify-center gap-1.5 cursor-pointer"
+                    title="Adicionar na sacola com a quantidade escolhida"
+                  >
+                    <ShoppingBag className="h-4 w-4 text-brand-yellow" />
+                    <span>Adicionar na Sacola</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       setOrderError('');
                       setCheckoutStep(2);
                     }}
-                    className="flex-2 bg-brand-yellow hover:bg-brand-yellow-dark text-brand-green font-black py-3 rounded-xl text-center text-xs transition-all active:scale-98 shadow-md flex justify-center items-center gap-1 cursor-pointer"
+                    className="flex-1 bg-brand-yellow hover:bg-brand-yellow-dark text-brand-green font-black py-3 rounded-xl text-center text-xs transition-all active:scale-98 shadow-md flex justify-center items-center gap-1 cursor-pointer"
                   >
-                    <span>Avançar para Seus Dados</span>
+                    <span>Pedir Agora</span>
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </>
