@@ -1541,6 +1541,8 @@ async function startServer() {
       isCombo,
       comboItems: Array.isArray(product.comboItems) ? product.comboItems : [],
       showInComboSection: Boolean(product.showInComboSection),
+      showInPromoSection: Boolean(product.showInPromoSection),
+      displayOrder: typeof product.displayOrder === 'number' ? product.displayOrder : (index !== -1 && typeof readyProducts[index].displayOrder === 'number' ? readyProducts[index].displayOrder : 0),
       skipIngredients: product.skipIngredients !== undefined ? Boolean(product.skipIngredients) : (isCombo ? true : false),
       showOnHome: product.showOnHome !== undefined ? Boolean(product.showOnHome) : (index !== -1 ? readyProducts[index].showOnHome !== false : true)
     };
@@ -1553,8 +1555,31 @@ async function startServer() {
 
     await dbSaveReadyProduct(targetProd);
 
+    // Keep memory array sorted by displayOrder
+    readyProducts.sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
     broadcastEvent('READY_PRODUCTS_REFRESH', readyProducts);
     res.json({ success: true, product: targetProd });
+  });
+
+  // Batch reorder ready products (Admin only)
+  app.post('/api/ready-products/reorder', async (req, res) => {
+    const { orderings, role } = req.body;
+    if (role !== 'admin') {
+      return res.status(403).json({ error: 'Não autorizado.' });
+    }
+    if (Array.isArray(orderings)) {
+      for (const item of orderings) {
+        const prod = readyProducts.find(p => p.id === item.id);
+        if (prod) {
+          prod.displayOrder = item.displayOrder;
+          await dbSaveReadyProduct(prod);
+        }
+      }
+      readyProducts.sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+      broadcastEvent('READY_PRODUCTS_REFRESH', readyProducts);
+    }
+    res.json({ success: true, readyProducts });
   });
 
   // Delete ready product (Admin only)

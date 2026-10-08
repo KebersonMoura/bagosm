@@ -177,6 +177,7 @@ export default function AdminDashboard({
   const [readyProductsSearch, setReadyProductsSearch] = useState<string>('');
   const [readyProductsCategory, setReadyProductsCategory] = useState<string>('all');
   const [readyProductsSubcategory, setReadyProductsSubcategory] = useState<string>('all');
+  const [readyProductsQuickFilter, setReadyProductsQuickFilter] = useState<'all' | 'destaque' | 'promo' | 'combo'>('all');
   const [restockAmount, setRestockAmount] = useState<{ [key: string]: number }>({});
   const [submittingRestock, setSubmittingRestock] = useState<string | null>(null);
 
@@ -1687,8 +1688,43 @@ export default function AdminDashboard({
       p.description.toLowerCase().includes(readyProductsSearch.toLowerCase()) ||
       (p.subcategory && p.subcategory.toLowerCase().includes(readyProductsSearch.toLowerCase())) ||
       (p.comboItems && p.comboItems.some(ci => ci.name.toLowerCase().includes(readyProductsSearch.toLowerCase())));
-    return matchesCat && matchesSubCat && matchesSearch;
-  });
+
+    if (!matchesCat || !matchesSubCat || !matchesSearch) return false;
+
+    if (readyProductsQuickFilter === 'destaque') {
+      return Boolean(p.showInComboSection || p.isPopular || p.displaySection === 'destaques' || p.displaySection === 'combo');
+    }
+    if (readyProductsQuickFilter === 'promo') {
+      return Boolean(p.showInPromoSection || p.isPromo || p.displaySection === 'promocao' || (p.badgeText && p.badgeText.toUpperCase().includes('PROMO')));
+    }
+    if (readyProductsQuickFilter === 'combo') {
+      return Boolean(p.isCombo || p.category === 'combo' || (p.comboItems && p.comboItems.length > 0));
+    }
+
+    return true;
+  }).slice().sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+
+  const moveProductOrder = (productId: string, direction: 'up' | 'down') => {
+    const list = [...filteredReadyProducts];
+    const currentIndex = list.findIndex(p => p.id === productId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+
+    const currentProd = list[currentIndex];
+    const targetProd = list[targetIndex];
+
+    const currentOrder = currentProd.displayOrder ?? currentIndex;
+    const targetOrder = targetProd.displayOrder ?? targetIndex;
+
+    const newCurrentOrder = targetOrder === currentOrder ? (direction === 'up' ? currentOrder - 1 : currentOrder + 1) : targetOrder;
+    const newTargetOrder = currentOrder;
+
+    if (onUpdateReadyProduct) {
+      onUpdateReadyProduct({ ...currentProd, displayOrder: newCurrentOrder });
+      onUpdateReadyProduct({ ...targetProd, displayOrder: newTargetOrder });
+    }
+  };
 
   const exportReadyProductsPDF = () => {
     const doc = new jsPDF();
@@ -4554,6 +4590,8 @@ export default function AdminDashboard({
                     isCombo: false,
                     comboItems: [],
                     showInComboSection: false,
+                    showInPromoSection: false,
+                    displayOrder: readyProducts.length + 1,
                     skipIngredients: false,
                     sandwichConfig: {
                       bread: '',
@@ -4619,13 +4657,16 @@ export default function AdminDashboard({
                   />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
-                  <label>Descrição *</label>
+                  <div className="flex justify-between items-center">
+                    <label className="font-bold text-slate-700">Ingredientes / Descrição em Observação *</label>
+                    <span className="text-[10px] text-slate-400">Aparece na tela de pedido do cliente</span>
+                  </div>
                   <textarea
                     required
                     rows={2}
                     value={editingProduct.description || ''}
                     onChange={(e) => setEditingProduct(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Ex: Pão parmesão, carne artesanal, molho barbecue e queijo cheddar."
+                    placeholder="Ex: Pão 3 Queijos, Frango Grelhado, Queijo Cheddar, Alface, Tomate e Cebola Crispy + Coca-Cola 350ml"
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
                   />
                 </div>
@@ -4754,81 +4795,56 @@ export default function AdminDashboard({
                     <span className="text-[10px] font-bold text-slate-500">Marque as seções desejadas</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {/* Checkbox Destaque */}
                     <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
-                      editingProduct.isPopular || editingProduct.displaySection === 'destaques' || editingProduct.displaySection === 'all'
+                      editingProduct.showInComboSection || editingProduct.isPopular || editingProduct.displaySection === 'destaques' || editingProduct.displaySection === 'combo'
                         ? 'bg-emerald-100/70 border-emerald-400 text-emerald-900 font-bold shadow-2xs'
                         : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                     }`}>
                       <input
                         type="checkbox"
-                        checked={Boolean(editingProduct.isPopular || editingProduct.displaySection === 'destaques' || editingProduct.displaySection === 'all')}
-                        onChange={(e) => {
-                          const isChecked = e.target.checked;
-                          setEditingProduct(prev => ({
-                            ...prev,
-                            isPopular: isChecked,
-                            displaySection: isChecked ? (prev?.isPromo || prev?.displaySection === 'promocao' ? 'all' : 'destaques') : (prev?.isPromo ? 'promocao' : 'cardapio')
-                          }));
-                        }}
-                        className="mt-0.5 rounded border-gray-300 text-brand-green focus:ring-brand-green"
-                      />
-                      <div>
-                        <span className="text-xs font-black block">⭐ Em Destaque</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe no topo da Página Inicial em "Destaques".</span>
-                      </div>
-                    </label>
-
-                    {/* Checkbox Promoção */}
-                    <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
-                      editingProduct.isPromo || editingProduct.displaySection === 'promocao' || editingProduct.displaySection === 'all'
-                        ? 'bg-amber-100/70 border-amber-400 text-amber-900 font-bold shadow-2xs'
-                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                    }`}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(editingProduct.isPromo || editingProduct.displaySection === 'promocao' || editingProduct.displaySection === 'all')}
-                        onChange={(e) => {
-                          const isChecked = e.target.checked;
-                          setEditingProduct(prev => ({
-                            ...prev,
-                            isPromo: isChecked,
-                            displaySection: isChecked ? (prev?.isPopular || prev?.displaySection === 'destaques' ? 'all' : 'promocao') : (prev?.isPopular ? 'destaques' : 'cardapio')
-                          }));
-                        }}
-                        className="mt-0.5 rounded border-gray-300 text-brand-green focus:ring-brand-green"
-                      />
-                      <div>
-                        <span className="text-xs font-black block">🔥 Promoção</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe no bloco especial de Promoções.</span>
-                      </div>
-                    </label>
-
-                    {/* Checkbox Destaque "Combo" */}
-                    <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
-                      editingProduct.showInComboSection || editingProduct.displaySection === 'combo'
-                        ? 'bg-purple-100/80 border-purple-400 text-purple-950 font-bold shadow-2xs'
-                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                    }`}>
-                      <input
-                        type="checkbox"
-                        checked={Boolean(editingProduct.showInComboSection || editingProduct.displaySection === 'combo')}
+                        checked={Boolean(editingProduct.showInComboSection || editingProduct.isPopular || editingProduct.displaySection === 'destaques' || editingProduct.displaySection === 'combo')}
                         onChange={(e) => {
                           const isChecked = e.target.checked;
                           setEditingProduct(prev => ({
                             ...prev,
                             showInComboSection: isChecked,
-                            isCombo: isChecked ? true : prev?.isCombo,
-                            skipIngredients: isChecked ? true : prev?.skipIngredients,
-                            displaySection: isChecked ? 'combo' : (prev?.isPopular ? 'destaques' : 'cardapio')
+                            isPopular: isChecked,
+                            displaySection: isChecked ? 'destaques' : (prev?.showInPromoSection ? 'promocao' : 'cardapio')
                           }));
                         }}
-                        className="mt-0.5 rounded border-purple-400 text-purple-600 focus:ring-purple-500"
+                        className="mt-0.5 rounded border-gray-300 text-brand-green focus:ring-brand-green"
                       />
                       <div>
-                        <span className="text-xs font-black block">⭐ Destaque</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe na vitrine de destaque na Home.</span>
+                        <span className="text-xs font-black block">⭐ Janela Destaque</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Aparece na janela "DESTAQUE" no topo da página inicial.</span>
+                      </div>
+                    </label>
+
+                    {/* Checkbox Promoção */}
+                    <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                      editingProduct.showInPromoSection || editingProduct.isPromo || editingProduct.displaySection === 'promocao'
+                        ? 'bg-rose-100/70 border-rose-400 text-rose-900 font-bold shadow-2xs'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editingProduct.showInPromoSection || editingProduct.isPromo || editingProduct.displaySection === 'promocao')}
+                        onChange={(e) => {
+                          const isChecked = e.target.checked;
+                          setEditingProduct(prev => ({
+                            ...prev,
+                            showInPromoSection: isChecked,
+                            isPromo: isChecked,
+                            displaySection: isChecked ? 'promocao' : (prev?.showInComboSection ? 'destaques' : 'cardapio')
+                          }));
+                        }}
+                        className="mt-0.5 rounded border-rose-400 text-rose-600 focus:ring-rose-500"
+                      />
+                      <div>
+                        <span className="text-xs font-black block">🔥 Janela Promoção</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Aparece na janela "PROMOÇÃO" no topo da página inicial.</span>
                       </div>
                     </label>
 
@@ -4845,7 +4861,7 @@ export default function AdminDashboard({
                           const isChecked = e.target.checked;
                           setEditingProduct(prev => ({
                             ...prev,
-                            displaySection: isChecked ? (prev?.displaySection ? prev.displaySection : 'cardapio') : 'destaques'
+                            displaySection: isChecked ? 'cardapio' : 'destaques'
                           }));
                         }}
                         className="mt-0.5 rounded border-gray-300 text-brand-green focus:ring-brand-green"
@@ -4857,31 +4873,45 @@ export default function AdminDashboard({
                     </label>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        Preço sem Desconto / De (R$) - Opcional p/ Promoção
+                        Preço sem Desconto / De (R$)
                       </label>
                       <input
                         type="number"
                         step="0.01"
                         value={editingProduct.originalPrice || ''}
                         onChange={(e) => setEditingProduct(prev => ({ ...prev, originalPrice: parseFloat(e.target.value) || undefined }))}
-                        placeholder="Ex: 38.00 (Calcula a % de desconto)"
+                        placeholder="Ex: 38.00 (Gera etiqueta de % desconto)"
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white font-mono"
                       />
                     </div>
 
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        Selo / Texto do Badge (Opcional)
+                        Selo / Badge (Opcional)
                       </label>
                       <input
                         type="text"
                         value={editingProduct.badgeText || ''}
                         onChange={(e) => setEditingProduct(prev => ({ ...prev, badgeText: e.target.value }))}
-                        placeholder="Ex: MAIS PEDIDO, NOVIDADE, PROMOÇÃO, ESPECIAL..."
+                        placeholder="Ex: MAIS PEDIDO, NOVIDADE, PROMOÇÃO..."
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                        🔢 Ordem de Exibição / Posição
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={editingProduct.displayOrder ?? 0}
+                        onChange={(e) => setEditingProduct(prev => ({ ...prev, displayOrder: parseInt(e.target.value, 10) || 0 }))}
+                        placeholder="Ex: 1, 2, 3..."
+                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white font-mono font-bold"
                       />
                     </div>
                   </div>
@@ -4933,31 +4963,59 @@ export default function AdminDashboard({
                   {editingProduct.isCombo ? (
                     <div className="space-y-4 pt-1 animate-in fade-in duration-200">
                       {/* Opções de Comportamento do Combo */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {/* Opção 1: Destaque na Página Inicial chamado "Combo" */}
-                        <label className={`p-3.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
-                          editingProduct.showInComboSection
+                        <label className={`p-3 rounded-xl border flex items-start gap-2 cursor-pointer transition-all ${
+                          editingProduct.showInComboSection || editingProduct.isPopular
                             ? 'bg-amber-100/90 border-amber-400 text-amber-950 font-bold shadow-xs'
                             : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                         }`}>
                           <input
                             type="checkbox"
-                            checked={Boolean(editingProduct.showInComboSection)}
-                            onChange={(e) => setEditingProduct(prev => ({ ...prev, showInComboSection: e.target.checked }))}
+                            checked={Boolean(editingProduct.showInComboSection || editingProduct.isPopular)}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setEditingProduct(prev => ({ ...prev, showInComboSection: checked, isPopular: checked }));
+                            }}
                             className="mt-0.5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
                           />
                           <div>
-                            <span className="text-xs font-black block flex items-center gap-1.5">
-                              <span>⭐</span> Destaque na Página Inicial
+                            <span className="text-xs font-black block flex items-center gap-1">
+                              <span>⭐</span> Janela Destaque
                             </span>
-                            <span className="text-[11px] text-slate-600 font-normal leading-tight block mt-0.5">
-                              Exibe em uma vitrine de destaque no topo da loja virtual.
+                            <span className="text-[10px] text-slate-600 font-normal leading-tight block mt-0.5">
+                              Exibe na vitrine de DESTAQUE na página inicial.
                             </span>
                           </div>
                         </label>
 
-                        {/* Opção 2: Ir direto para o fechamento (sem escolha de insumos) */}
-                        <label className={`p-3.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                        {/* Opção 2: Promoção na Página Inicial */}
+                        <label className={`p-3 rounded-xl border flex items-start gap-2 cursor-pointer transition-all ${
+                          editingProduct.showInPromoSection || editingProduct.isPromo
+                            ? 'bg-rose-100/90 border-rose-400 text-rose-950 font-bold shadow-xs'
+                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                        }`}>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(editingProduct.showInPromoSection || editingProduct.isPromo)}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setEditingProduct(prev => ({ ...prev, showInPromoSection: checked, isPromo: checked }));
+                            }}
+                            className="mt-0.5 rounded border-rose-400 text-rose-600 focus:ring-rose-500"
+                          />
+                          <div>
+                            <span className="text-xs font-black block flex items-center gap-1">
+                              <span>🔥</span> Janela Promoção
+                            </span>
+                            <span className="text-[10px] text-slate-600 font-normal leading-tight block mt-0.5">
+                              Exibe na vitrine de PROMOÇÃO na página inicial.
+                            </span>
+                          </div>
+                        </label>
+
+                        {/* Opção 3: Ir direto para o fechamento (sem escolha de insumos) */}
+                        <label className={`p-3 rounded-xl border flex items-start gap-2 cursor-pointer transition-all ${
                           editingProduct.skipIngredients
                             ? 'bg-emerald-100/90 border-emerald-400 text-emerald-950 font-bold shadow-xs'
                             : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
@@ -4969,11 +5027,11 @@ export default function AdminDashboard({
                             className="mt-0.5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
                           />
                           <div>
-                            <span className="text-xs font-black block flex items-center gap-1.5">
-                              <span>⚡</span> Direto p/ Fechamento (Sem Insumos)
+                            <span className="text-xs font-black block flex items-center gap-1">
+                              <span>⚡</span> Fechamento Direto
                             </span>
-                            <span className="text-[11px] text-slate-600 font-normal leading-tight block mt-0.5">
-                              O cliente clica e vai direto confirmar dados e pagamento, sem passar pela montagem de insumos.
+                            <span className="text-[10px] text-slate-600 font-normal leading-tight block mt-0.5">
+                              Pula a seleção de insumos e fecha o pedido.
                             </span>
                           </div>
                         </label>
@@ -5449,6 +5507,8 @@ export default function AdminDashboard({
                         isCombo: Boolean(editingProduct.isCombo),
                         comboItems: editingProduct.comboItems || [],
                         showInComboSection: Boolean(editingProduct.showInComboSection),
+                        showInPromoSection: Boolean(editingProduct.showInPromoSection),
+                        displayOrder: typeof editingProduct.displayOrder === 'number' ? editingProduct.displayOrder : 0,
                         skipIngredients: Boolean(editingProduct.skipIngredients)
                       };
                       onUpdateReadyProduct(payload);
@@ -5464,18 +5524,76 @@ export default function AdminDashboard({
             </div>
           )}
 
+          {/* Quick Filter Tabs for Products Table */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 pb-1">
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 text-xs">
+              <button
+                type="button"
+                onClick={() => setReadyProductsQuickFilter('all')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                  readyProductsQuickFilter === 'all'
+                    ? 'bg-white text-slate-900 shadow-2xs font-black'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Todos ({readyProducts.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setReadyProductsQuickFilter('destaque')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  readyProductsQuickFilter === 'destaque'
+                    ? 'bg-emerald-600 text-white shadow-2xs font-black'
+                    : 'text-slate-600 hover:text-emerald-700'
+                }`}
+              >
+                <span>⭐ Destaques</span>
+                <span className="opacity-80">({readyProducts.filter(p => p.showInComboSection || p.isPopular || p.displaySection === 'destaques' || p.displaySection === 'combo').length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setReadyProductsQuickFilter('promo')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  readyProductsQuickFilter === 'promo'
+                    ? 'bg-rose-600 text-white shadow-2xs font-black'
+                    : 'text-slate-600 hover:text-rose-700'
+                }`}
+              >
+                <span>🔥 Promoções</span>
+                <span className="opacity-80">({readyProducts.filter(p => p.showInPromoSection || p.isPromo || p.displaySection === 'promocao' || (p.badgeText && p.badgeText.toUpperCase().includes('PROMO'))).length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setReadyProductsQuickFilter('combo')}
+                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                  readyProductsQuickFilter === 'combo'
+                    ? 'bg-purple-600 text-white shadow-2xs font-black'
+                    : 'text-slate-600 hover:text-purple-700'
+                }`}
+              >
+                <span>🍟 Combos</span>
+                <span className="opacity-80">({readyProducts.filter(p => p.isCombo || p.category === 'combo').length})</span>
+              </button>
+            </div>
+
+            <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
+              <span>💡 Dica: Use os botões ▲ e ▼ ou digite o número para ordenar os produtos nas vitrines da loja virtual.</span>
+            </div>
+          </div>
+
           {/* Interactive Table of ready products */}
           <div className="overflow-x-auto bg-white rounded-2xl border border-slate-200 shadow-sm">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-black uppercase text-[11px] tracking-wider">
+                  <th className="p-3 w-20 text-center">Ordem</th>
                   <th className="p-3 w-14 text-center">Foto</th>
                   <th className="p-3 min-w-[170px]">Produto</th>
                   <th className="p-3 min-w-[120px]">Categoria</th>
                   <th className="p-3 min-w-[130px]">Subcategoria</th>
                   <th className="p-3 w-28 text-right">Preço</th>
-                  <th className="p-3 min-w-[140px]">Destaques / Selos</th>
-                  <th className="p-3 min-w-[200px]">Receita / Descrição</th>
+                  <th className="p-3 min-w-[180px]">Vitrines / Selos</th>
+                  <th className="p-3 min-w-[200px]">Ingredientes / Observação</th>
                   <th className="p-3 w-28 text-center">Pág. Inicial</th>
                   <th className="p-3 w-28 text-center">Ações</th>
                 </tr>
@@ -5483,6 +5601,46 @@ export default function AdminDashboard({
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                 {filteredReadyProducts.map(prod => (
                   <tr key={prod.id} className="hover:bg-slate-50/80 transition-colors">
+                    {/* Ordem Column */}
+                    <td className="p-2 text-center align-middle">
+                      <div className="flex items-center justify-center gap-1">
+                        <input
+                          type="number"
+                          min="0"
+                          defaultValue={prod.displayOrder ?? 0}
+                          key={`ready-order-${prod.id}-${prod.displayOrder ?? 0}`}
+                          onBlur={(e) => {
+                            const newOrder = parseInt(e.target.value, 10) || 0;
+                            if (newOrder !== (prod.displayOrder ?? 0) && onUpdateReadyProduct) {
+                              onUpdateReadyProduct({ ...prod, displayOrder: newOrder });
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                          }}
+                          className="w-12 px-1.5 py-1 text-center font-bold text-slate-800 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-brand-green"
+                          title="Digite o número e dê Enter para salvar"
+                        />
+                        <div className="flex flex-col">
+                          <button
+                            type="button"
+                            onClick={() => moveProductOrder(prod.id, 'up')}
+                            className="p-0.5 text-slate-400 hover:text-brand-green hover:bg-slate-100 rounded cursor-pointer transition-colors"
+                            title="Subir na lista"
+                          >
+                            <ChevronUp className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveProductOrder(prod.id, 'down')}
+                            className="p-0.5 text-slate-400 hover:text-brand-green hover:bg-slate-100 rounded cursor-pointer transition-colors"
+                            title="Descer na lista"
+                          >
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </td>
                     {/* Foto Thumbnail Button */}
                     <td className="p-2 text-center align-middle">
                       <button
@@ -5612,17 +5770,53 @@ export default function AdminDashboard({
 
                     {/* Destaques / Selos */}
                     <td className="p-2.5 align-middle">
-                      <div className="flex flex-wrap gap-1">
-                        {(prod.isPopular || prod.displaySection === 'destaques' || prod.displaySection === 'all') && (
-                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
-                            ⭐ Destaque
-                          </span>
-                        )}
-                        {(prod.isPromo || prod.displaySection === 'promocao' || prod.displaySection === 'all') && (
-                          <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
-                            🔥 Promoção
-                          </span>
-                        )}
+                      <div className="flex flex-wrap gap-1.5 items-center">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onUpdateReadyProduct) {
+                              const isCur = Boolean(prod.showInComboSection || prod.isPopular);
+                              onUpdateReadyProduct({
+                                ...prod,
+                                showInComboSection: !isCur,
+                                isPopular: !isCur,
+                                displaySection: !isCur ? 'destaques' : (prod.showInPromoSection ? 'promocao' : 'cardapio')
+                              });
+                            }
+                          }}
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border transition-all cursor-pointer flex items-center gap-0.5 ${
+                            prod.showInComboSection || prod.isPopular || prod.displaySection === 'destaques' || prod.displaySection === 'combo'
+                              ? 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200 shadow-2xs'
+                              : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200 hover:text-slate-600'
+                          }`}
+                          title="Clique para ativar/desativar na janela Destaque"
+                        >
+                          ⭐ Destaque
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onUpdateReadyProduct) {
+                              const isCur = Boolean(prod.showInPromoSection || prod.isPromo);
+                              onUpdateReadyProduct({
+                                ...prod,
+                                showInPromoSection: !isCur,
+                                isPromo: !isCur,
+                                displaySection: !isCur ? 'promocao' : (prod.showInComboSection ? 'destaques' : 'cardapio')
+                              });
+                            }
+                          }}
+                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border transition-all cursor-pointer flex items-center gap-0.5 ${
+                            prod.showInPromoSection || prod.isPromo || prod.displaySection === 'promocao' || (prod.badgeText && prod.badgeText.toUpperCase().includes('PROMO'))
+                              ? 'bg-rose-100 text-rose-900 border-rose-300 hover:bg-rose-200 shadow-2xs'
+                              : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200 hover:text-slate-600'
+                          }`}
+                          title="Clique para ativar/desativar na janela Promoção"
+                        >
+                          🔥 Promoção
+                        </button>
+
                         {prod.badgeText && (
                           <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase">
                             {prod.badgeText}
@@ -5633,11 +5827,6 @@ export default function AdminDashboard({
                             🍟 Combo
                           </span>
                         )}
-                        {prod.showInComboSection && (
-                          <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
-                            ✨ Seção Combo
-                          </span>
-                        )}
                         {prod.skipIngredients && (
                           <span className="bg-blue-100 text-blue-900 border border-blue-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
                             ⚡ Direto
@@ -5646,9 +5835,14 @@ export default function AdminDashboard({
                       </div>
                     </td>
 
-                    {/* Receita / Descrição */}
-                    <td className="p-2.5 align-middle text-[11px] text-slate-500">
-                      {prod.comboItems && prod.comboItems.length > 0 ? (
+                    {/* Ingredientes / Observação */}
+                    <td className="p-2.5 align-middle text-[11px] text-slate-600">
+                      {prod.description ? (
+                        <div className="line-clamp-2 font-medium text-slate-800" title={prod.description}>
+                          <span className="font-extrabold text-amber-700">🥗 </span>
+                          <span>{prod.description}</span>
+                        </div>
+                      ) : prod.comboItems && prod.comboItems.length > 0 ? (
                         <div className="line-clamp-2">
                           <span className="font-extrabold text-amber-800">🥤 Combo: </span>
                           <span className="text-slate-700">{prod.comboItems.map(i => `${i.quantity || 1}x ${i.name}`).join(' + ')}</span>
@@ -5660,7 +5854,7 @@ export default function AdminDashboard({
                           {prod.sandwichConfig.veggies.length > 0 && <span> | <strong>Salada:</strong> {prod.sandwichConfig.veggies.join(', ')}</span>}
                         </div>
                       ) : (
-                        <span className="italic text-slate-400 line-clamp-1">{prod.description || 'Produto Direto'}</span>
+                        <span className="italic text-slate-400 line-clamp-1">{prod.name}</span>
                       )}
                     </td>
 

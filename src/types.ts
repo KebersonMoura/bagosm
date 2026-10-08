@@ -169,6 +169,8 @@ export interface ReadyProduct {
   isCombo?: boolean;
   comboItems?: ComboItem[];
   showInComboSection?: boolean; // Opção de aparecer em destaque na página inicial chamado "combo"
+  showInPromoSection?: boolean; // Opção de aparecer em promoção na página inicial
+  displayOrder?: number; // Ordem de exibição na página inicial e nas seções
   skipIngredients?: boolean; // Já deve ir direto para fechamento não deve ter escolha de insumos
 }
 

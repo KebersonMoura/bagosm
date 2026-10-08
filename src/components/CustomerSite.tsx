@@ -630,6 +630,35 @@ export default function CustomerSite({
     setIsCartOpen(true);
   };
 
+  const handleAddComboToCart = (item: any) => {
+    const raw = item.rawReadyProduct || item;
+    const numPrice = Number(raw.price) || 0;
+    const comboImg = raw.image || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
+    const comboDrinksAndCookies = raw.comboItems?.map((ci: any) => `${ci.quantity || 1}x ${ci.name}`) || [];
+    const formattedConfig = raw.sandwichConfig ? {
+      ...raw.sandwichConfig,
+      drinksAndCookies: [
+        ...(raw.sandwichConfig.drinksAndCookies || []),
+        ...comboDrinksAndCookies
+      ]
+    } : (comboDrinksAndCookies.length > 0 ? {
+      bread: '',
+      protein: '',
+      cheese: '',
+      veggies: [],
+      sauces: [],
+      extras: [],
+      drinksAndCookies: comboDrinksAndCookies
+    } : undefined);
+
+    addToQuickCart({
+      name: raw.name,
+      price: numPrice,
+      image: comboImg,
+      sandwichConfig: formattedConfig
+    });
+  };
+
   const handleProductClick = (item: any) => {
     const isCombo = Boolean(
       item.isCombo || 
@@ -646,6 +675,8 @@ export default function CustomerSite({
       setBuildModalFormat(item.category === 'salad' || item.rawReadyProduct?.category === 'salad' ? 'salad' : 'sandwich');
       setBuildModalProduct(item.rawReadyProduct || null);
       setIsBuildModalOpen(true);
+    } else if (isCombo) {
+      handleAddComboToCart(item);
     } else {
       const readyProd: ReadyProduct = item.rawReadyProduct || {
         id: item.id || `prod-${Date.now()}`,
@@ -1889,9 +1920,9 @@ export default function CustomerSite({
                     >
                       {/* Imagem + Badges */}
                       <div
-                        onClick={() => handleProductClick({ rawReadyProduct: combo, ...combo })}
+                        onClick={() => handleAddComboToCart(combo)}
                         className="relative h-44 sm:h-48 overflow-hidden bg-slate-100 cursor-pointer"
-                        title="Clique para pedir este combo direto"
+                        title="Clique para adicionar este combo na sacola"
                       >
                         <img
                           src={comboImg}
@@ -1918,8 +1949,9 @@ export default function CustomerSite({
                       <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                         <div>
                           <h4
-                            onClick={() => handleProductClick({ rawReadyProduct: combo, ...combo })}
+                            onClick={() => handleAddComboToCart(combo)}
                             className="font-black text-slate-900 text-base sm:text-lg leading-snug group-hover:text-amber-600 transition-colors cursor-pointer"
+                            title="Clique para adicionar este combo na sacola"
                           >
                             {combo.name}
                           </h4>
@@ -1950,7 +1982,7 @@ export default function CustomerSite({
                           )}
                         </div>
 
-                        {/* Preço e Botão de Pedir Direto */}
+                        {/* Preço e Botão de Adicionar na Sacola */}
                         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                           <div>
                             <span className="text-[10px] font-bold text-slate-400 block uppercase">Preço Combo</span>
@@ -1968,12 +2000,12 @@ export default function CustomerSite({
 
                           <button
                             type="button"
-                            onClick={() => handleProductClick({ rawReadyProduct: combo, ...combo })}
-                            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                            title="Ir direto para o fechamento"
+                            onClick={() => handleAddComboToCart(combo)}
+                            className="bg-brand-green hover:bg-brand-green-dark text-white font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                            title="Adicionar na sacola"
                           >
-                            <Zap className="h-4 w-4 fill-slate-950 text-slate-950" />
-                            <span>Pedir Combo</span>
+                            <ShoppingBag className="h-4 w-4 text-brand-yellow" />
+                            <span>Adicionar na sacola</span>
                           </button>
                         </div>
                       </div>
@@ -2142,8 +2174,8 @@ export default function CustomerSite({
                                 />
                                 <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center rounded-xl m-2.5 sm:m-3">
                                   <span className="bg-white/95 text-slate-800 text-[11px] font-black px-3 py-1.5 rounded-full shadow-md flex items-center gap-1.5 transform translate-y-2 group-hover/img:translate-y-0 transition-transform">
-                                    {isCombo ? <Zap className="h-3.5 w-3.5 text-purple-600" /> : <Sparkles className="h-3.5 w-3.5 text-brand-green" />}
-                                    <span>{isCombo ? 'Pedir Combo' : 'Ver Opções'}</span>
+                                    {isCombo ? <ShoppingBag className="h-3.5 w-3.5 text-brand-green" /> : <Sparkles className="h-3.5 w-3.5 text-brand-green" />}
+                                    <span>{isCombo ? 'Adicionar na Sacola' : 'Ver Opções'}</span>
                                   </span>
                                 </div>
                               </div>
@@ -2210,12 +2242,12 @@ export default function CustomerSite({
                                     ) : isCombo ? (
                                       <button
                                         type="button"
-                                        onClick={() => handleProductClick(item)}
-                                        className="bg-purple-600 hover:bg-purple-700 text-white font-black text-xs px-3.5 py-2 rounded-[15px] transition-all cursor-pointer shadow-xs active:scale-95 flex items-center gap-1.5 shrink-0"
-                                        title="Pedir Combo (Fechamento Direto)"
+                                        onClick={() => handleAddComboToCart(item)}
+                                        className="bg-brand-green hover:bg-brand-green-dark text-white font-extrabold text-xs px-3.5 py-2 rounded-[15px] transition-all shadow-2xs cursor-pointer active:scale-95 flex items-center gap-1.5 shrink-0"
+                                        title="Adicionar na sacola"
                                       >
-                                        <Zap className="h-3.5 w-3.5" />
-                                        <span>Pedir Combo</span>
+                                        <ShoppingBag className="h-3.5 w-3.5 text-brand-yellow" />
+                                        <span>Adicionar</span>
                                       </button>
                                     ) : (
                                       <button
@@ -2338,12 +2370,12 @@ export default function CustomerSite({
                                         ) : isCombo ? (
                                           <button
                                             type="button"
-                                            onClick={() => handleProductClick(item)}
-                                            className="bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] px-3 py-1.5 rounded-[15px] transition-all cursor-pointer shadow-xs active:scale-95 inline-flex items-center gap-1"
-                                            title="Pedir Combo (Fechamento Direto)"
+                                            onClick={() => handleAddComboToCart(item)}
+                                            className="bg-brand-green hover:bg-brand-green-dark text-white font-extrabold text-[11px] px-3 py-1.5 rounded-[15px] transition-all shadow-2xs cursor-pointer active:scale-95 inline-flex items-center gap-1"
+                                            title="Adicionar na sacola"
                                           >
-                                            <Zap className="h-3 w-3" />
-                                            <span>Pedir Combo</span>
+                                            <ShoppingBag className="h-3 w-3 text-brand-yellow" />
+                                            <span>Adicionar</span>
                                           </button>
                                         ) : (
                                           <button
@@ -2450,11 +2482,11 @@ export default function CustomerSite({
                                     ) : isCombo ? (
                                       <button
                                         type="button"
-                                        onClick={() => handleProductClick(item)}
-                                        className="bg-purple-600 hover:bg-purple-700 text-white font-black text-[11px] px-2.5 py-1.5 rounded-xl transition-all cursor-pointer shadow-xs active:scale-95 inline-flex items-center gap-1 whitespace-nowrap"
-                                        title="Pedir Combo (Fechamento Direto)"
+                                        onClick={() => handleAddComboToCart(item)}
+                                        className="bg-brand-green hover:bg-brand-green-dark text-white font-extrabold text-[11px] px-2.5 py-1.5 rounded-xl transition-all shadow-2xs cursor-pointer active:scale-95 inline-flex items-center gap-1 whitespace-nowrap"
+                                        title="Adicionar na sacola"
                                       >
-                                        <Zap className="h-3 w-3" />
+                                        <ShoppingBag className="h-3 w-3 text-brand-yellow" />
                                         <span>Pedir</span>
                                       </button>
                                     ) : (

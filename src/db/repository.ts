@@ -276,9 +276,23 @@ export async function initDatabaseTables(): Promise<boolean> {
         is_combo TINYINT(1) NOT NULL DEFAULT 0,
         combo_items_json JSON DEFAULT NULL,
         show_in_combo_section TINYINT(1) NOT NULL DEFAULT 0,
+        show_in_promo_section TINYINT(1) NOT NULL DEFAULT 0,
+        display_order INT NOT NULL DEFAULT 0,
         skip_ingredients TINYINT(1) NOT NULL DEFAULT 0
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    try {
+      await query(`ALTER TABLE ready_products ADD COLUMN show_in_promo_section TINYINT(1) NOT NULL DEFAULT 0`);
+    } catch (e) {
+      // Column may already exist
+    }
+
+    try {
+      await query(`ALTER TABLE ready_products ADD COLUMN display_order INT NOT NULL DEFAULT 0`);
+    } catch (e) {
+      // Column may already exist
+    }
 
     await query(`
       CREATE TABLE IF NOT EXISTS users (
@@ -514,8 +528,11 @@ export async function dbGetReadyProducts(): Promise<ReadyProduct[] | null> {
              show_on_home as showOnHome,
              is_combo as isCombo, combo_items_json as comboItemsJson,
              show_in_combo_section as showInComboSection,
+             show_in_promo_section as showInPromoSection,
+             display_order as displayOrder,
              skip_ingredients as skipIngredients
       FROM ready_products
+      ORDER BY display_order ASC, name ASC
     `);
     if (!rows) return null;
     return rows.map(r => ({
@@ -537,10 +554,12 @@ export async function dbGetReadyProducts(): Promise<ReadyProduct[] | null> {
       isCombo: Boolean(r.isCombo),
       comboItems: r.comboItemsJson ? (typeof r.comboItemsJson === 'string' ? JSON.parse(r.comboItemsJson) : r.comboItemsJson) : [],
       showInComboSection: Boolean(r.showInComboSection),
+      showInPromoSection: Boolean(r.showInPromoSection),
+      displayOrder: typeof r.displayOrder === 'number' ? r.displayOrder : 0,
       skipIngredients: r.skipIngredients !== undefined && r.skipIngredients !== null ? Boolean(r.skipIngredients) : (Boolean(r.isCombo))
     }));
   } catch (err) {
-    // Fallback if combo columns don't exist yet on older schema
+    // Fallback if promo or combo columns don't exist yet on older schema
     try {
       const rows: any[] = await query(`
         SELECT id, name, description, price, original_price as originalPrice, 
@@ -566,7 +585,8 @@ export async function dbGetReadyProducts(): Promise<ReadyProduct[] | null> {
         displaySection: r.displaySection || 'cardapio',
         linkedIngredientId: r.linkedIngredientId || undefined,
         sandwichConfig: r.sandwich_config_json ? (typeof r.sandwich_config_json === 'string' ? JSON.parse(r.sandwich_config_json) : r.sandwich_config_json) : undefined,
-        showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true
+        showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true,
+        displayOrder: 0
       }));
     } catch {
       return null;
@@ -579,6 +599,8 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
   const isComboVal = prod.isCombo ? 1 : 0;
   const comboItemsVal = prod.comboItems && prod.comboItems.length > 0 ? JSON.stringify(prod.comboItems) : null;
   const showInComboSectionVal = prod.showInComboSection ? 1 : 0;
+  const showInPromoSectionVal = prod.showInPromoSection ? 1 : 0;
+  const displayOrderVal = typeof prod.displayOrder === 'number' ? prod.displayOrder : 0;
   const skipIngredientsVal = prod.skipIngredients !== undefined ? (prod.skipIngredients ? 1 : 0) : (prod.isCombo ? 1 : 0);
 
   try {
@@ -586,9 +608,9 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
       INSERT INTO ready_products (
         id, name, description, price, original_price, is_popular, is_promo, badge_text, 
         image, category, subcategory, display_section, linked_ingredient_id, sandwich_config_json, 
-        show_on_home, is_combo, combo_items_json, show_in_combo_section, skip_ingredients
+        show_on_home, is_combo, combo_items_json, show_in_combo_section, show_in_promo_section, display_order, skip_ingredients
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON DUPLICATE KEY UPDATE
         name = VALUES(name),
         description = VALUES(description),
@@ -607,6 +629,8 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
         is_combo = VALUES(is_combo),
         combo_items_json = VALUES(combo_items_json),
         show_in_combo_section = VALUES(show_in_combo_section),
+        show_in_promo_section = VALUES(show_in_promo_section),
+        display_order = VALUES(display_order),
         skip_ingredients = VALUES(skip_ingredients)
     `, [
       prod.id,
@@ -627,15 +651,21 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
       isComboVal,
       comboItemsVal,
       showInComboSectionVal,
+      showInPromoSectionVal,
+      displayOrderVal,
       skipIngredientsVal
     ]);
     return true;
   } catch (err) {
-    // Fallback without combo columns
+    // Fallback without promo/order columns
     try {
       await query(`
-        INSERT INTO ready_products (id, name, description, price, original_price, is_popular, is_promo, badge_text, image, category, subcategory, display_section, linked_ingredient_id, sandwich_config_json, show_on_home)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ready_products (
+          id, name, description, price, original_price, is_popular, is_promo, badge_text, 
+          image, category, subcategory, display_section, linked_ingredient_id, sandwich_config_json, 
+          show_on_home, is_combo, combo_items_json, show_in_combo_section, skip_ingredients
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           name = VALUES(name),
           description = VALUES(description),
@@ -650,7 +680,11 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
           display_section = VALUES(display_section),
           linked_ingredient_id = VALUES(linked_ingredient_id),
           sandwich_config_json = VALUES(sandwich_config_json),
-          show_on_home = VALUES(show_on_home)
+          show_on_home = VALUES(show_on_home),
+          is_combo = VALUES(is_combo),
+          combo_items_json = VALUES(combo_items_json),
+          show_in_combo_section = VALUES(show_in_combo_section),
+          skip_ingredients = VALUES(skip_ingredients)
       `, [
         prod.id,
         prod.name,
@@ -666,7 +700,11 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
         prod.displaySection || 'cardapio',
         prod.linkedIngredientId || null,
         prod.sandwichConfig ? JSON.stringify(prod.sandwichConfig) : null,
-        showOnHomeVal
+        showOnHomeVal,
+        isComboVal,
+        comboItemsVal,
+        showInComboSectionVal,
+        skipIngredientsVal
       ]);
       return true;
     } catch (e) {
