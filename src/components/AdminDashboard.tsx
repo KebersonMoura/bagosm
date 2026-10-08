@@ -177,7 +177,6 @@ export default function AdminDashboard({
   const [readyProductsSearch, setReadyProductsSearch] = useState<string>('');
   const [readyProductsCategory, setReadyProductsCategory] = useState<string>('all');
   const [readyProductsSubcategory, setReadyProductsSubcategory] = useState<string>('all');
-  const [readyProductsQuickFilter, setReadyProductsQuickFilter] = useState<'all' | 'destaque' | 'promo' | 'combo'>('all');
   const [restockAmount, setRestockAmount] = useState<{ [key: string]: number }>({});
   const [submittingRestock, setSubmittingRestock] = useState<string | null>(null);
 
@@ -674,6 +673,36 @@ export default function AdminDashboard({
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
+  };
+
+  const handleToggleFreeDelivery = async (forceValue?: boolean) => {
+    const newFreeState = typeof forceValue === 'boolean' ? forceValue : !deliveryConfig.isFreeDeliveryAll;
+    const updatedConfig = {
+      ...deliveryConfig,
+      isFreeDeliveryAll: newFreeState
+    };
+    setDeliveryConfig(updatedConfig);
+    setSavingDeliverySettings(true);
+    setDeliverySaveSuccess(null);
+    try {
+      const result = await saveDeliverySettingsToDb(updatedConfig);
+      if (result.success) {
+        setDeliverySaveSuccess(
+          newFreeState
+            ? '🛵 DELIVERY GRÁTIS ATIVADO COM SUCESSO! A taxa de entrega será R$ 0,00 para todos os clientes.'
+            : '🛵 Delivery Grátis desativado! Taxas normais de entrega por distância reativadas.'
+        );
+      } else {
+        saveDeliverySettings(updatedConfig);
+        setDeliverySaveSuccess(newFreeState ? 'Delivery Grátis ativado localmente!' : 'Delivery Grátis desativado localmente!');
+      }
+    } catch (err) {
+      saveDeliverySettings(updatedConfig);
+      setDeliverySaveSuccess(newFreeState ? 'Delivery Grátis ativado!' : 'Delivery Grátis desativado!');
+    } finally {
+      setSavingDeliverySettings(false);
+      setTimeout(() => setDeliverySaveSuccess(null), 5000);
+    }
   };
 
   useEffect(() => {
@@ -1688,43 +1717,8 @@ export default function AdminDashboard({
       p.description.toLowerCase().includes(readyProductsSearch.toLowerCase()) ||
       (p.subcategory && p.subcategory.toLowerCase().includes(readyProductsSearch.toLowerCase())) ||
       (p.comboItems && p.comboItems.some(ci => ci.name.toLowerCase().includes(readyProductsSearch.toLowerCase())));
-
-    if (!matchesCat || !matchesSubCat || !matchesSearch) return false;
-
-    if (readyProductsQuickFilter === 'destaque') {
-      return Boolean(p.showInComboSection || p.isPopular || p.displaySection === 'destaques' || p.displaySection === 'combo');
-    }
-    if (readyProductsQuickFilter === 'promo') {
-      return Boolean(p.showInPromoSection || p.isPromo || p.displaySection === 'promocao' || (p.badgeText && p.badgeText.toUpperCase().includes('PROMO')));
-    }
-    if (readyProductsQuickFilter === 'combo') {
-      return Boolean(p.isCombo || p.category === 'combo' || (p.comboItems && p.comboItems.length > 0));
-    }
-
-    return true;
-  }).slice().sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
-
-  const moveProductOrder = (productId: string, direction: 'up' | 'down') => {
-    const list = [...filteredReadyProducts];
-    const currentIndex = list.findIndex(p => p.id === productId);
-    if (currentIndex === -1) return;
-    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= list.length) return;
-
-    const currentProd = list[currentIndex];
-    const targetProd = list[targetIndex];
-
-    const currentOrder = currentProd.displayOrder ?? currentIndex;
-    const targetOrder = targetProd.displayOrder ?? targetIndex;
-
-    const newCurrentOrder = targetOrder === currentOrder ? (direction === 'up' ? currentOrder - 1 : currentOrder + 1) : targetOrder;
-    const newTargetOrder = currentOrder;
-
-    if (onUpdateReadyProduct) {
-      onUpdateReadyProduct({ ...currentProd, displayOrder: newCurrentOrder });
-      onUpdateReadyProduct({ ...targetProd, displayOrder: newTargetOrder });
-    }
-  };
+    return matchesCat && matchesSubCat && matchesSearch;
+  });
 
   const exportReadyProductsPDF = () => {
     const doc = new jsPDF();
@@ -4590,8 +4584,6 @@ export default function AdminDashboard({
                     isCombo: false,
                     comboItems: [],
                     showInComboSection: false,
-                    showInPromoSection: false,
-                    displayOrder: readyProducts.length + 1,
                     skipIngredients: false,
                     sandwichConfig: {
                       bread: '',
@@ -4657,16 +4649,13 @@ export default function AdminDashboard({
                   />
                 </div>
                 <div className="space-y-1.5 md:col-span-2">
-                  <div className="flex justify-between items-center">
-                    <label className="font-bold text-slate-700">Ingredientes / Descrição em Observação *</label>
-                    <span className="text-[10px] text-slate-400">Aparece na tela de pedido do cliente</span>
-                  </div>
+                  <label>Descrição *</label>
                   <textarea
                     required
                     rows={2}
                     value={editingProduct.description || ''}
                     onChange={(e) => setEditingProduct(prev => ({ ...prev, description: e.target.value }))}
-                    placeholder="Ex: Pão 3 Queijos, Frango Grelhado, Queijo Cheddar, Alface, Tomate e Cebola Crispy + Coca-Cola 350ml"
+                    placeholder="Ex: Pão parmesão, carne artesanal, molho barbecue e queijo cheddar."
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
                   />
                 </div>
@@ -4795,56 +4784,81 @@ export default function AdminDashboard({
                     <span className="text-[10px] font-bold text-slate-500">Marque as seções desejadas</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                     {/* Checkbox Destaque */}
                     <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
-                      editingProduct.showInComboSection || editingProduct.isPopular || editingProduct.displaySection === 'destaques' || editingProduct.displaySection === 'combo'
+                      editingProduct.isPopular || editingProduct.displaySection === 'destaques' || editingProduct.displaySection === 'all'
                         ? 'bg-emerald-100/70 border-emerald-400 text-emerald-900 font-bold shadow-2xs'
                         : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                     }`}>
                       <input
                         type="checkbox"
-                        checked={Boolean(editingProduct.showInComboSection || editingProduct.isPopular || editingProduct.displaySection === 'destaques' || editingProduct.displaySection === 'combo')}
+                        checked={Boolean(editingProduct.isPopular || editingProduct.displaySection === 'destaques' || editingProduct.displaySection === 'all')}
                         onChange={(e) => {
                           const isChecked = e.target.checked;
                           setEditingProduct(prev => ({
                             ...prev,
-                            showInComboSection: isChecked,
                             isPopular: isChecked,
-                            displaySection: isChecked ? 'destaques' : (prev?.showInPromoSection ? 'promocao' : 'cardapio')
+                            displaySection: isChecked ? (prev?.isPromo || prev?.displaySection === 'promocao' ? 'all' : 'destaques') : (prev?.isPromo ? 'promocao' : 'cardapio')
                           }));
                         }}
                         className="mt-0.5 rounded border-gray-300 text-brand-green focus:ring-brand-green"
                       />
                       <div>
-                        <span className="text-xs font-black block">⭐ Janela Destaque</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Aparece na janela "DESTAQUE" no topo da página inicial.</span>
+                        <span className="text-xs font-black block">⭐ Em Destaque</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe no topo da Página Inicial em "Destaques".</span>
                       </div>
                     </label>
 
                     {/* Checkbox Promoção */}
                     <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
-                      editingProduct.showInPromoSection || editingProduct.isPromo || editingProduct.displaySection === 'promocao'
-                        ? 'bg-rose-100/70 border-rose-400 text-rose-900 font-bold shadow-2xs'
+                      editingProduct.isPromo || editingProduct.displaySection === 'promocao' || editingProduct.displaySection === 'all'
+                        ? 'bg-amber-100/70 border-amber-400 text-amber-900 font-bold shadow-2xs'
                         : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                     }`}>
                       <input
                         type="checkbox"
-                        checked={Boolean(editingProduct.showInPromoSection || editingProduct.isPromo || editingProduct.displaySection === 'promocao')}
+                        checked={Boolean(editingProduct.isPromo || editingProduct.displaySection === 'promocao' || editingProduct.displaySection === 'all')}
                         onChange={(e) => {
                           const isChecked = e.target.checked;
                           setEditingProduct(prev => ({
                             ...prev,
-                            showInPromoSection: isChecked,
                             isPromo: isChecked,
-                            displaySection: isChecked ? 'promocao' : (prev?.showInComboSection ? 'destaques' : 'cardapio')
+                            displaySection: isChecked ? (prev?.isPopular || prev?.displaySection === 'destaques' ? 'all' : 'promocao') : (prev?.isPopular ? 'destaques' : 'cardapio')
                           }));
                         }}
-                        className="mt-0.5 rounded border-rose-400 text-rose-600 focus:ring-rose-500"
+                        className="mt-0.5 rounded border-gray-300 text-brand-green focus:ring-brand-green"
                       />
                       <div>
-                        <span className="text-xs font-black block">🔥 Janela Promoção</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Aparece na janela "PROMOÇÃO" no topo da página inicial.</span>
+                        <span className="text-xs font-black block">🔥 Promoção</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe no bloco especial de Promoções.</span>
+                      </div>
+                    </label>
+
+                    {/* Checkbox Destaque "Combo" */}
+                    <label className={`p-3 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                      editingProduct.showInComboSection || editingProduct.displaySection === 'combo'
+                        ? 'bg-purple-100/80 border-purple-400 text-purple-950 font-bold shadow-2xs'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(editingProduct.showInComboSection || editingProduct.displaySection === 'combo')}
+                        onChange={(e) => {
+                          const isChecked = e.target.checked;
+                          setEditingProduct(prev => ({
+                            ...prev,
+                            showInComboSection: isChecked,
+                            isCombo: isChecked ? true : prev?.isCombo,
+                            skipIngredients: isChecked ? true : prev?.skipIngredients,
+                            displaySection: isChecked ? 'combo' : (prev?.isPopular ? 'destaques' : 'cardapio')
+                          }));
+                        }}
+                        className="mt-0.5 rounded border-purple-400 text-purple-600 focus:ring-purple-500"
+                      />
+                      <div>
+                        <span className="text-xs font-black block">⭐ Destaque</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe na vitrine de destaque na Home.</span>
                       </div>
                     </label>
 
@@ -4861,7 +4875,7 @@ export default function AdminDashboard({
                           const isChecked = e.target.checked;
                           setEditingProduct(prev => ({
                             ...prev,
-                            displaySection: isChecked ? 'cardapio' : 'destaques'
+                            displaySection: isChecked ? (prev?.displaySection ? prev.displaySection : 'cardapio') : 'destaques'
                           }));
                         }}
                         className="mt-0.5 rounded border-gray-300 text-brand-green focus:ring-brand-green"
@@ -4873,45 +4887,31 @@ export default function AdminDashboard({
                     </label>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        Preço sem Desconto / De (R$)
+                        Preço sem Desconto / De (R$) - Opcional p/ Promoção
                       </label>
                       <input
                         type="number"
                         step="0.01"
                         value={editingProduct.originalPrice || ''}
                         onChange={(e) => setEditingProduct(prev => ({ ...prev, originalPrice: parseFloat(e.target.value) || undefined }))}
-                        placeholder="Ex: 38.00 (Gera etiqueta de % desconto)"
+                        placeholder="Ex: 38.00 (Calcula a % de desconto)"
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white font-mono"
                       />
                     </div>
 
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        Selo / Badge (Opcional)
+                        Selo / Texto do Badge (Opcional)
                       </label>
                       <input
                         type="text"
                         value={editingProduct.badgeText || ''}
                         onChange={(e) => setEditingProduct(prev => ({ ...prev, badgeText: e.target.value }))}
-                        placeholder="Ex: MAIS PEDIDO, NOVIDADE, PROMOÇÃO..."
+                        placeholder="Ex: MAIS PEDIDO, NOVIDADE, PROMOÇÃO, ESPECIAL..."
                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                        🔢 Ordem de Exibição / Posição
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={editingProduct.displayOrder ?? 0}
-                        onChange={(e) => setEditingProduct(prev => ({ ...prev, displayOrder: parseInt(e.target.value, 10) || 0 }))}
-                        placeholder="Ex: 1, 2, 3..."
-                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs bg-white font-mono font-bold"
                       />
                     </div>
                   </div>
@@ -4963,59 +4963,31 @@ export default function AdminDashboard({
                   {editingProduct.isCombo ? (
                     <div className="space-y-4 pt-1 animate-in fade-in duration-200">
                       {/* Opções de Comportamento do Combo */}
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {/* Opção 1: Destaque na Página Inicial chamado "Combo" */}
-                        <label className={`p-3 rounded-xl border flex items-start gap-2 cursor-pointer transition-all ${
-                          editingProduct.showInComboSection || editingProduct.isPopular
+                        <label className={`p-3.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
+                          editingProduct.showInComboSection
                             ? 'bg-amber-100/90 border-amber-400 text-amber-950 font-bold shadow-xs'
                             : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                         }`}>
                           <input
                             type="checkbox"
-                            checked={Boolean(editingProduct.showInComboSection || editingProduct.isPopular)}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setEditingProduct(prev => ({ ...prev, showInComboSection: checked, isPopular: checked }));
-                            }}
+                            checked={Boolean(editingProduct.showInComboSection)}
+                            onChange={(e) => setEditingProduct(prev => ({ ...prev, showInComboSection: e.target.checked }))}
                             className="mt-0.5 rounded border-amber-400 text-amber-600 focus:ring-amber-500"
                           />
                           <div>
-                            <span className="text-xs font-black block flex items-center gap-1">
-                              <span>⭐</span> Janela Destaque
+                            <span className="text-xs font-black block flex items-center gap-1.5">
+                              <span>⭐</span> Destaque na Página Inicial
                             </span>
-                            <span className="text-[10px] text-slate-600 font-normal leading-tight block mt-0.5">
-                              Exibe na vitrine de DESTAQUE na página inicial.
-                            </span>
-                          </div>
-                        </label>
-
-                        {/* Opção 2: Promoção na Página Inicial */}
-                        <label className={`p-3 rounded-xl border flex items-start gap-2 cursor-pointer transition-all ${
-                          editingProduct.showInPromoSection || editingProduct.isPromo
-                            ? 'bg-rose-100/90 border-rose-400 text-rose-950 font-bold shadow-xs'
-                            : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                        }`}>
-                          <input
-                            type="checkbox"
-                            checked={Boolean(editingProduct.showInPromoSection || editingProduct.isPromo)}
-                            onChange={(e) => {
-                              const checked = e.target.checked;
-                              setEditingProduct(prev => ({ ...prev, showInPromoSection: checked, isPromo: checked }));
-                            }}
-                            className="mt-0.5 rounded border-rose-400 text-rose-600 focus:ring-rose-500"
-                          />
-                          <div>
-                            <span className="text-xs font-black block flex items-center gap-1">
-                              <span>🔥</span> Janela Promoção
-                            </span>
-                            <span className="text-[10px] text-slate-600 font-normal leading-tight block mt-0.5">
-                              Exibe na vitrine de PROMOÇÃO na página inicial.
+                            <span className="text-[11px] text-slate-600 font-normal leading-tight block mt-0.5">
+                              Exibe em uma vitrine de destaque no topo da loja virtual.
                             </span>
                           </div>
                         </label>
 
-                        {/* Opção 3: Ir direto para o fechamento (sem escolha de insumos) */}
-                        <label className={`p-3 rounded-xl border flex items-start gap-2 cursor-pointer transition-all ${
+                        {/* Opção 2: Ir direto para o fechamento (sem escolha de insumos) */}
+                        <label className={`p-3.5 rounded-xl border flex items-start gap-2.5 cursor-pointer transition-all ${
                           editingProduct.skipIngredients
                             ? 'bg-emerald-100/90 border-emerald-400 text-emerald-950 font-bold shadow-xs'
                             : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
@@ -5027,11 +4999,11 @@ export default function AdminDashboard({
                             className="mt-0.5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500"
                           />
                           <div>
-                            <span className="text-xs font-black block flex items-center gap-1">
-                              <span>⚡</span> Fechamento Direto
+                            <span className="text-xs font-black block flex items-center gap-1.5">
+                              <span>⚡</span> Direto p/ Fechamento (Sem Insumos)
                             </span>
-                            <span className="text-[10px] text-slate-600 font-normal leading-tight block mt-0.5">
-                              Pula a seleção de insumos e fecha o pedido.
+                            <span className="text-[11px] text-slate-600 font-normal leading-tight block mt-0.5">
+                              O cliente clica e vai direto confirmar dados e pagamento, sem passar pela montagem de insumos.
                             </span>
                           </div>
                         </label>
@@ -5507,8 +5479,6 @@ export default function AdminDashboard({
                         isCombo: Boolean(editingProduct.isCombo),
                         comboItems: editingProduct.comboItems || [],
                         showInComboSection: Boolean(editingProduct.showInComboSection),
-                        showInPromoSection: Boolean(editingProduct.showInPromoSection),
-                        displayOrder: typeof editingProduct.displayOrder === 'number' ? editingProduct.displayOrder : 0,
                         skipIngredients: Boolean(editingProduct.skipIngredients)
                       };
                       onUpdateReadyProduct(payload);
@@ -5524,76 +5494,18 @@ export default function AdminDashboard({
             </div>
           )}
 
-          {/* Quick Filter Tabs for Products Table */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 pb-1">
-            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl border border-slate-200 text-xs">
-              <button
-                type="button"
-                onClick={() => setReadyProductsQuickFilter('all')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
-                  readyProductsQuickFilter === 'all'
-                    ? 'bg-white text-slate-900 shadow-2xs font-black'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Todos ({readyProducts.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setReadyProductsQuickFilter('destaque')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                  readyProductsQuickFilter === 'destaque'
-                    ? 'bg-emerald-600 text-white shadow-2xs font-black'
-                    : 'text-slate-600 hover:text-emerald-700'
-                }`}
-              >
-                <span>⭐ Destaques</span>
-                <span className="opacity-80">({readyProducts.filter(p => p.showInComboSection || p.isPopular || p.displaySection === 'destaques' || p.displaySection === 'combo').length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setReadyProductsQuickFilter('promo')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                  readyProductsQuickFilter === 'promo'
-                    ? 'bg-rose-600 text-white shadow-2xs font-black'
-                    : 'text-slate-600 hover:text-rose-700'
-                }`}
-              >
-                <span>🔥 Promoções</span>
-                <span className="opacity-80">({readyProducts.filter(p => p.showInPromoSection || p.isPromo || p.displaySection === 'promocao' || (p.badgeText && p.badgeText.toUpperCase().includes('PROMO'))).length})</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setReadyProductsQuickFilter('combo')}
-                className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                  readyProductsQuickFilter === 'combo'
-                    ? 'bg-purple-600 text-white shadow-2xs font-black'
-                    : 'text-slate-600 hover:text-purple-700'
-                }`}
-              >
-                <span>🍟 Combos</span>
-                <span className="opacity-80">({readyProducts.filter(p => p.isCombo || p.category === 'combo').length})</span>
-              </button>
-            </div>
-
-            <div className="text-[11px] text-slate-500 font-semibold flex items-center gap-1">
-              <span>💡 Dica: Use os botões ▲ e ▼ ou digite o número para ordenar os produtos nas vitrines da loja virtual.</span>
-            </div>
-          </div>
-
           {/* Interactive Table of ready products */}
           <div className="overflow-x-auto bg-white rounded-2xl border border-slate-200 shadow-sm">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-black uppercase text-[11px] tracking-wider">
-                  <th className="p-3 w-20 text-center">Ordem</th>
                   <th className="p-3 w-14 text-center">Foto</th>
                   <th className="p-3 min-w-[170px]">Produto</th>
                   <th className="p-3 min-w-[120px]">Categoria</th>
                   <th className="p-3 min-w-[130px]">Subcategoria</th>
                   <th className="p-3 w-28 text-right">Preço</th>
-                  <th className="p-3 min-w-[180px]">Vitrines / Selos</th>
-                  <th className="p-3 min-w-[200px]">Ingredientes / Observação</th>
+                  <th className="p-3 min-w-[140px]">Destaques / Selos</th>
+                  <th className="p-3 min-w-[200px]">Receita / Descrição</th>
                   <th className="p-3 w-28 text-center">Pág. Inicial</th>
                   <th className="p-3 w-28 text-center">Ações</th>
                 </tr>
@@ -5601,46 +5513,6 @@ export default function AdminDashboard({
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                 {filteredReadyProducts.map(prod => (
                   <tr key={prod.id} className="hover:bg-slate-50/80 transition-colors">
-                    {/* Ordem Column */}
-                    <td className="p-2 text-center align-middle">
-                      <div className="flex items-center justify-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          defaultValue={prod.displayOrder ?? 0}
-                          key={`ready-order-${prod.id}-${prod.displayOrder ?? 0}`}
-                          onBlur={(e) => {
-                            const newOrder = parseInt(e.target.value, 10) || 0;
-                            if (newOrder !== (prod.displayOrder ?? 0) && onUpdateReadyProduct) {
-                              onUpdateReadyProduct({ ...prod, displayOrder: newOrder });
-                            }
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                          }}
-                          className="w-12 px-1.5 py-1 text-center font-bold text-slate-800 bg-white border border-slate-200 rounded-lg text-xs focus:ring-1 focus:ring-brand-green"
-                          title="Digite o número e dê Enter para salvar"
-                        />
-                        <div className="flex flex-col">
-                          <button
-                            type="button"
-                            onClick={() => moveProductOrder(prod.id, 'up')}
-                            className="p-0.5 text-slate-400 hover:text-brand-green hover:bg-slate-100 rounded cursor-pointer transition-colors"
-                            title="Subir na lista"
-                          >
-                            <ChevronUp className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveProductOrder(prod.id, 'down')}
-                            className="p-0.5 text-slate-400 hover:text-brand-green hover:bg-slate-100 rounded cursor-pointer transition-colors"
-                            title="Descer na lista"
-                          >
-                            <ChevronDown className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </td>
                     {/* Foto Thumbnail Button */}
                     <td className="p-2 text-center align-middle">
                       <button
@@ -5770,53 +5642,17 @@ export default function AdminDashboard({
 
                     {/* Destaques / Selos */}
                     <td className="p-2.5 align-middle">
-                      <div className="flex flex-wrap gap-1.5 items-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (onUpdateReadyProduct) {
-                              const isCur = Boolean(prod.showInComboSection || prod.isPopular);
-                              onUpdateReadyProduct({
-                                ...prod,
-                                showInComboSection: !isCur,
-                                isPopular: !isCur,
-                                displaySection: !isCur ? 'destaques' : (prod.showInPromoSection ? 'promocao' : 'cardapio')
-                              });
-                            }
-                          }}
-                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border transition-all cursor-pointer flex items-center gap-0.5 ${
-                            prod.showInComboSection || prod.isPopular || prod.displaySection === 'destaques' || prod.displaySection === 'combo'
-                              ? 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200 shadow-2xs'
-                              : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200 hover:text-slate-600'
-                          }`}
-                          title="Clique para ativar/desativar na janela Destaque"
-                        >
-                          ⭐ Destaque
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (onUpdateReadyProduct) {
-                              const isCur = Boolean(prod.showInPromoSection || prod.isPromo);
-                              onUpdateReadyProduct({
-                                ...prod,
-                                showInPromoSection: !isCur,
-                                isPromo: !isCur,
-                                displaySection: !isCur ? 'promocao' : (prod.showInComboSection ? 'destaques' : 'cardapio')
-                              });
-                            }
-                          }}
-                          className={`text-[10px] font-extrabold px-2 py-0.5 rounded-lg border transition-all cursor-pointer flex items-center gap-0.5 ${
-                            prod.showInPromoSection || prod.isPromo || prod.displaySection === 'promocao' || (prod.badgeText && prod.badgeText.toUpperCase().includes('PROMO'))
-                              ? 'bg-rose-100 text-rose-900 border-rose-300 hover:bg-rose-200 shadow-2xs'
-                              : 'bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-200 hover:text-slate-600'
-                          }`}
-                          title="Clique para ativar/desativar na janela Promoção"
-                        >
-                          🔥 Promoção
-                        </button>
-
+                      <div className="flex flex-wrap gap-1">
+                        {(prod.isPopular || prod.displaySection === 'destaques' || prod.displaySection === 'all') && (
+                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
+                            ⭐ Destaque
+                          </span>
+                        )}
+                        {(prod.isPromo || prod.displaySection === 'promocao' || prod.displaySection === 'all') && (
+                          <span className="bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
+                            🔥 Promoção
+                          </span>
+                        )}
                         {prod.badgeText && (
                           <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded uppercase">
                             {prod.badgeText}
@@ -5827,6 +5663,11 @@ export default function AdminDashboard({
                             🍟 Combo
                           </span>
                         )}
+                        {prod.showInComboSection && (
+                          <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
+                            ✨ Seção Combo
+                          </span>
+                        )}
                         {prod.skipIngredients && (
                           <span className="bg-blue-100 text-blue-900 border border-blue-200 text-[10px] font-extrabold px-1.5 py-0.5 rounded">
                             ⚡ Direto
@@ -5835,14 +5676,9 @@ export default function AdminDashboard({
                       </div>
                     </td>
 
-                    {/* Ingredientes / Observação */}
-                    <td className="p-2.5 align-middle text-[11px] text-slate-600">
-                      {prod.description ? (
-                        <div className="line-clamp-2 font-medium text-slate-800" title={prod.description}>
-                          <span className="font-extrabold text-amber-700">🥗 </span>
-                          <span>{prod.description}</span>
-                        </div>
-                      ) : prod.comboItems && prod.comboItems.length > 0 ? (
+                    {/* Receita / Descrição */}
+                    <td className="p-2.5 align-middle text-[11px] text-slate-500">
+                      {prod.comboItems && prod.comboItems.length > 0 ? (
                         <div className="line-clamp-2">
                           <span className="font-extrabold text-amber-800">🥤 Combo: </span>
                           <span className="text-slate-700">{prod.comboItems.map(i => `${i.quantity || 1}x ${i.name}`).join(' + ')}</span>
@@ -5854,7 +5690,7 @@ export default function AdminDashboard({
                           {prod.sandwichConfig.veggies.length > 0 && <span> | <strong>Salada:</strong> {prod.sandwichConfig.veggies.join(', ')}</span>}
                         </div>
                       ) : (
-                        <span className="italic text-slate-400 line-clamp-1">{prod.name}</span>
+                        <span className="italic text-slate-400 line-clamp-1">{prod.description || 'Produto Direto'}</span>
                       )}
                     </td>
 
@@ -6140,24 +5976,44 @@ export default function AdminDashboard({
               </div>
 
               {/* Version & Last Update Header Badge */}
-              <div className="flex flex-wrap items-center gap-2.5 bg-slate-50 border border-slate-200/90 px-3.5 py-2 rounded-xl shrink-0 self-start md:self-auto shadow-2xs">
-                <div className="flex items-center gap-1.5 text-xs font-black text-slate-800">
-                  <span className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0 self-start md:self-auto">
+                {/* Botão de Destaque Rápido para Alternar Delivery Grátis ou Não */}
+                <button
+                  type="button"
+                  disabled={savingDeliverySettings}
+                  onClick={() => handleToggleFreeDelivery()}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black border transition-all flex items-center gap-2 cursor-pointer shadow-2xs active:scale-95 disabled:opacity-50 ${
+                    deliveryConfig.isFreeDeliveryAll
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-500 shadow-md ring-2 ring-emerald-400/40'
+                      : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-300'
+                  }`}
+                  title={deliveryConfig.isFreeDeliveryAll ? 'Clique para desativar a entrega grátis e voltar a cobrar por km' : 'Clique para deixar o delivery grátis para todos os pedidos'}
+                >
+                  <Truck className={`h-4 w-4 ${deliveryConfig.isFreeDeliveryAll ? 'text-white' : 'text-slate-500'}`} />
+                  <span>
+                    {deliveryConfig.isFreeDeliveryAll ? '🛵 Delivery Grátis: ATIVADO' : '🛵 Delivery Grátis: DESATIVADO'}
                   </span>
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Versão:</span>
-                  <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-mono text-xs font-black border border-emerald-200/60">
-                    {APP_VERSION_LABEL}
-                  </span>
-                </div>
-                <span className="text-slate-300">|</span>
-                <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold">
-                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Última Atualização:</span>
-                  <span className="font-extrabold text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-200 text-xs">
-                    {APP_LAST_UPDATE}
-                  </span>
+                </button>
+
+                <div className="flex flex-wrap items-center gap-2.5 bg-slate-50 border border-slate-200/90 px-3.5 py-2 rounded-xl shadow-2xs">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-slate-800">
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Versão:</span>
+                    <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-mono text-xs font-black border border-emerald-200/60">
+                      {APP_VERSION_LABEL}
+                    </span>
+                  </div>
+                  <span className="text-slate-300">|</span>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-600 font-semibold">
+                    <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Última Atualização:</span>
+                    <span className="font-extrabold text-slate-800 bg-white px-2 py-0.5 rounded-md border border-slate-200 text-xs">
+                      {APP_LAST_UPDATE}
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -6187,6 +6043,11 @@ export default function AdminDashboard({
               >
                 <Truck className="h-4 w-4 text-amber-500" />
                 <span>TAXA DE ENTREGA</span>
+                {deliveryConfig.isFreeDeliveryAll && (
+                  <span className="bg-emerald-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase ml-0.5 shadow-2xs">
+                    Grátis
+                  </span>
+                )}
               </button>
               <button
                 type="button"
@@ -6279,6 +6140,71 @@ export default function AdminDashboard({
           {/* TAB 1: TAXA DE ENTREGA */}
           {settingsSubTab === 'delivery' && (
             <div className="space-y-6 animate-in fade-in duration-150">
+              {/* Botão de Destaque: Deixar Delivery Grátis ou Não */}
+              <div className={`p-5 rounded-2xl border-2 transition-all shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+                deliveryConfig.isFreeDeliveryAll
+                  ? 'bg-emerald-50/90 border-emerald-400 text-emerald-950 ring-2 ring-emerald-500/20'
+                  : 'bg-white border-slate-200 text-slate-800'
+              }`}>
+                <div className="flex items-start gap-3.5">
+                  <div className={`p-3 rounded-2xl shrink-0 ${
+                    deliveryConfig.isFreeDeliveryAll
+                      ? 'bg-emerald-600 text-white shadow-md'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    <Truck className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="font-black text-sm sm:text-base tracking-tight">
+                        Delivery Grátis para Todos os Pedidos
+                      </h4>
+                      {deliveryConfig.isFreeDeliveryAll ? (
+                        <span className="bg-emerald-600 text-white text-[11px] font-black px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                          <span className="h-2 w-2 rounded-full bg-white animate-pulse"></span>
+                          ATIVADO (TAXA R$ 0,00)
+                        </span>
+                      ) : (
+                        <span className="bg-slate-200 text-slate-700 text-[11px] font-extrabold px-2.5 py-0.5 rounded-full">
+                          DESATIVADO (COBRANÇA POR FAIXAS/KM)
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                      {deliveryConfig.isFreeDeliveryAll
+                        ? '🎉 A entrega gratuita está ativada! A taxa de entrega será R$ 0,00 para qualquer endereço atendido pela loja (zerada automaticamente em todo o cardápio e checkout).'
+                        : 'As taxas de entrega estão sendo cobradas normalmente conforme as faixas de distância (km) cadastradas abaixo.'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={savingDeliverySettings}
+                  onClick={() => handleToggleFreeDelivery()}
+                  className={`w-full md:w-auto px-5 py-3 rounded-xl font-black text-xs transition-all shadow-md active:scale-95 flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50 ${
+                    deliveryConfig.isFreeDeliveryAll
+                      ? 'bg-rose-600 hover:bg-rose-700 text-white'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  }`}
+                  title={deliveryConfig.isFreeDeliveryAll ? 'Clique para desativar a entrega grátis e voltar a cobrar por km' : 'Clique para deixar o delivery grátis para todos os pedidos'}
+                >
+                  {savingDeliverySettings ? (
+                    <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                  ) : deliveryConfig.isFreeDeliveryAll ? (
+                    <>
+                      <X className="h-4 w-4" />
+                      <span>Desativar Delivery Grátis</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="h-4 w-4" />
+                      <span>Deixar Delivery Grátis</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
               {/* Store Address & Map Box */}
               <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
@@ -6566,6 +6492,37 @@ export default function AdminDashboard({
                 </h4>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Opção Rápida de Delivery Grátis Geral */}
+                  <div className={`md:col-span-2 p-3.5 rounded-xl border flex items-center justify-between gap-3 transition-all ${
+                    deliveryConfig.isFreeDeliveryAll
+                      ? 'bg-emerald-50 border-emerald-300'
+                      : 'bg-slate-50 border-slate-200'
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      <Truck className={`h-5 w-5 shrink-0 ${deliveryConfig.isFreeDeliveryAll ? 'text-emerald-600' : 'text-slate-400'}`} />
+                      <div>
+                        <span className="text-xs font-black text-slate-800 block">
+                          Deixar Delivery Grátis Geral (Todos os Pedidos)
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-medium">
+                          Zera a taxa de entrega para todos os pedidos de delivery, independentemente da distância ou valor do pedido.
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={savingDeliverySettings}
+                      onClick={() => handleToggleFreeDelivery()}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer shrink-0 shadow-2xs active:scale-95 disabled:opacity-50 ${
+                        deliveryConfig.isFreeDeliveryAll
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                          : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                      }`}
+                    >
+                      {deliveryConfig.isFreeDeliveryAll ? '✓ Ativado (R$ 0,00)' : 'Desativado'}
+                    </button>
+                  </div>
+
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-slate-700 uppercase">
                       Entrega Grátis para Pedidos acima de (R$):

@@ -59,6 +59,7 @@ import {
   getDateYMDInBrasilia, 
   getTodayBrasilia 
 } from '../utils/dateUtils';
+import { getDeliverySettings } from '../utils/deliverySettings';
 
 interface PosDashboardProps {
   user: User;
@@ -3603,7 +3604,10 @@ export default function PosDashboard({
                       type="button"
                       onClick={() => {
                         setDeliveryType('entrega');
-                        if (parseFloat((deliveryFeeInput || '0').replace(',', '.')) <= 0) {
+                        const dSettings = getDeliverySettings();
+                        if (dSettings?.isFreeDeliveryAll) {
+                          setDeliveryFeeInput('0.00');
+                        } else if (parseFloat((deliveryFeeInput || '0').replace(',', '.')) <= 0) {
                           setDeliveryFeeInput('5.00');
                         }
                       }}

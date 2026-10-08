@@ -14,6 +14,7 @@ export interface StoreDeliverySettings {
   outOfRangeFee: number;
   maxDeliveryKm: number;
   freeDeliveryMinOrder: number; // 0 = sem entrega grátis por valor
+  isFreeDeliveryAll?: boolean; // Deixar delivery grátis ou não para todos os pedidos
   deliveryOpeningTime: string; // Ex: "18:00"
   deliveryClosingTime: string; // Ex: "23:30"
   isDeliveryBlocked?: boolean; // Bloqueio manual de recebimento de pedidos
@@ -44,6 +45,7 @@ export const DEFAULT_DELIVERY_SETTINGS: StoreDeliverySettings = {
   outOfRangeFee: 15.00,
   maxDeliveryKm: 10,
   freeDeliveryMinOrder: 0,
+  isFreeDeliveryAll: false,
   deliveryOpeningTime: '15:00',
   deliveryClosingTime: '23:00',
   isDeliveryBlocked: false,
@@ -174,6 +176,27 @@ export function calculateDeliveryFee(
   subtotal: number = 0,
   settings: StoreDeliverySettings = getDeliverySettings()
 ): FeeCalculationResult {
+  const sortedTiers = Array.isArray(settings?.tiers) ? [...settings.tiers].sort((a, b) => (a.minKm || 0) - (b.minKm || 0)) : [];
+  const maxConfiguredKm = sortedTiers.length > 0 ? Math.max(...sortedTiers.map(t => t.maxKm || 0)) : (settings?.maxDeliveryKm || 10);
+
+  // Se o botão de Deixar Delivery Grátis estiver ativado
+  if (settings?.isFreeDeliveryAll) {
+    if (distanceKm > maxConfiguredKm && !settings?.allowOutOfRange) {
+      return {
+        fee: 0,
+        tierLabel: `Endereço a ${(distanceKm || 0).toFixed(1)}km excede a distância máxima de entrega (${settings?.maxDeliveryKm || maxConfiguredKm}km)`,
+        isOutOfRange: true,
+        isFreeDelivery: false
+      };
+    }
+    return {
+      fee: 0,
+      tierLabel: 'Entrega Grátis (Promoção de Delivery Grátis Ativa)',
+      isOutOfRange: false,
+      isFreeDelivery: true
+    };
+  }
+
   const freeMin = Number(settings?.freeDeliveryMinOrder) || 0;
   if (freeMin > 0 && subtotal >= freeMin) {
     return {
@@ -183,8 +206,6 @@ export function calculateDeliveryFee(
       isFreeDelivery: true
     };
   }
-
-  const sortedTiers = Array.isArray(settings?.tiers) ? [...settings.tiers].sort((a, b) => (a.minKm || 0) - (b.minKm || 0)) : [];
   
   for (const tier of sortedTiers) {
     const minKm = tier.minKm || 0;
@@ -203,7 +224,6 @@ export function calculateDeliveryFee(
     }
   }
 
-  const maxConfiguredKm = sortedTiers.length > 0 ? Math.max(...sortedTiers.map(t => t.maxKm || 0)) : 0;
   const outOfRangeFeeVal = Number(settings?.outOfRangeFee) || 0;
   if (distanceKm > maxConfiguredKm) {
     if (settings?.allowOutOfRange) {

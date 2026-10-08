@@ -158,7 +158,9 @@ export default function CustomerSite({
 
   // Map Delivery Fee states (Initialized from saved store settings in DB / localStorage)
   const initialSettings = getDeliverySettings();
-  const defaultMinFee = (initialSettings.tiers && initialSettings.tiers.length > 0 && initialSettings.tiers[0].fee !== undefined) ? initialSettings.tiers[0].fee : 3.00;
+  const defaultMinFee = initialSettings.isFreeDeliveryAll
+    ? 0
+    : ((initialSettings.tiers && initialSettings.tiers.length > 0 && initialSettings.tiers[0].fee !== undefined) ? initialSettings.tiers[0].fee : 3.00);
   const [storeDeliverySettings, setStoreDeliverySettings] = useState<StoreDeliverySettings>(initialSettings);
   const [deliveryMapLat, setDeliveryMapLat] = useState<number>(initialSettings.storeLat || -5.6138);
   const [deliveryMapLng, setDeliveryMapLng] = useState<number>(initialSettings.storeLng || -38.0169);
@@ -213,7 +215,10 @@ export default function CustomerSite({
         if (settings.deliveryOpeningTime) {
           setDeliveryOpeningTime(settings.deliveryOpeningTime);
         }
-        if (settings.tiers && settings.tiers.length > 0 && settings.tiers[0].fee !== undefined) {
+        if (settings.isFreeDeliveryAll) {
+          setDeliveryFee(0);
+          setDeliveryTierDescription('Entrega Grátis (Promoção de Delivery Grátis Ativa)');
+        } else if (settings.tiers && settings.tiers.length > 0 && settings.tiers[0].fee !== undefined) {
           const apiMinFee = settings.tiers[0].fee;
           setDeliveryFee(prev => (prev === 0 || deliveryDistanceKm === 0 ? apiMinFee : prev));
         }
@@ -233,7 +238,10 @@ export default function CustomerSite({
       if (updated.deliveryOpeningTime) {
         setDeliveryOpeningTime(updated.deliveryOpeningTime);
       }
-      if (updated.tiers && updated.tiers.length > 0 && updated.tiers[0].fee !== undefined) {
+      if (updated.isFreeDeliveryAll) {
+        setDeliveryFee(0);
+        setDeliveryTierDescription('Entrega Grátis (Promoção de Delivery Grátis Ativa)');
+      } else if (updated.tiers && updated.tiers.length > 0 && updated.tiers[0].fee !== undefined) {
         const updatedMinFee = updated.tiers[0].fee;
         setDeliveryFee(prev => (deliveryDistanceKm === 0 ? updatedMinFee : prev));
       }
@@ -571,7 +579,7 @@ export default function CustomerSite({
       setDeliveryFee(0);
       setDeliveryTierDescription('');
     }
-  }, [deliveryType, deliveryMapLat, deliveryMapLng, quickCart]);
+  }, [deliveryType, deliveryMapLat, deliveryMapLng, quickCart, storeDeliverySettings]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const neighborhoodInputRef = useRef<HTMLInputElement>(null);
   const [quickBuyProduct, setQuickBuyProduct] = useState<ReadyProduct | null>(null);
@@ -1843,7 +1851,7 @@ export default function CustomerSite({
                     </span>
                   </span>
 
-                  {storeDeliverySettings.pickupOnly && (
+                  {storeDeliverySettings.pickupOnly ? (
                     <>
                       <span className="text-slate-300 font-normal">|</span>
                       <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl text-xs font-black uppercase tracking-wide flex items-center gap-1.5 shadow-2xs">
@@ -1851,7 +1859,15 @@ export default function CustomerSite({
                         <span>Somente Retirada</span>
                       </span>
                     </>
-                  )}
+                  ) : storeDeliverySettings.isFreeDeliveryAll ? (
+                    <>
+                      <span className="text-slate-300 font-normal">|</span>
+                      <span className="bg-emerald-100 text-emerald-900 border border-emerald-300 px-2.5 py-1 rounded-xl text-xs font-black uppercase tracking-wide flex items-center gap-1.5 shadow-2xs animate-pulse">
+                        <span>🛵</span>
+                        <span>Delivery Grátis</span>
+                      </span>
+                    </>
+                  ) : null}
                 </div>
 
                 {mapsUrl && (
@@ -1868,6 +1884,33 @@ export default function CustomerSite({
               </div>
             );
           })()}
+
+          {/* Banner Promocional de Delivery Grátis na Página Inicial */}
+          {storeDeliverySettings.isFreeDeliveryAll && !storeDeliverySettings.pickupOnly && (
+            <div className="bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 text-white border-2 border-emerald-400 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 shadow-md animate-in fade-in">
+              <div className="flex items-center gap-3.5">
+                <div className="h-11 w-11 rounded-2xl bg-white/20 text-white flex items-center justify-center text-2xl shrink-0 font-black shadow-xs">
+                  🛵
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h4 className="font-black text-white text-sm sm:text-base uppercase tracking-tight">
+                      Entrega Grátis Hoje!
+                    </h4>
+                    <span className="bg-white text-emerald-900 text-[10px] font-black px-2 py-0.5 rounded-md uppercase">
+                      Promoção Ativa
+                    </span>
+                  </div>
+                  <p className="text-xs font-bold text-emerald-50 mt-0.5 leading-relaxed">
+                    Aproveite: todos os pedidos para delivery com taxa de entrega R$ 0,00! Faça seu pedido agora.
+                  </p>
+                </div>
+              </div>
+              <div className="hidden sm:flex items-center gap-1.5 bg-white text-emerald-900 px-3.5 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider shrink-0 shadow-sm border border-emerald-200">
+                <span>🛵 Taxa R$ 0,00</span>
+              </div>
+            </div>
+          )}
 
           {/* Banner Aviso Somente Retirada na Página Inicial */}
           {storeDeliverySettings.pickupOnly && (
