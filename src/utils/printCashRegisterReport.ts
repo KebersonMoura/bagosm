@@ -225,10 +225,22 @@ export function getCashSessionMetrics(
     ? Number(session.cashDifference)
     : (actualCashInDrawer - expectedCashInDrawer);
 
+  // Count unique orders
+  const counterOrderIds = new Set<string>();
+  counterTxs.forEach((t, idx) => {
+    const key = t.orderId || t.orderCode || (t.id && t.id.startsWith('tx-ord-') ? t.id.replace(/-[0-9]+$/, '') : `tx-c-${idx}`);
+    counterOrderIds.add(key);
+  });
+  const deliveryOrderIds = new Set<string>();
+  deliveryTxs.forEach((t, idx) => {
+    const key = t.orderId || t.orderCode || (t.id && t.id.startsWith('tx-ord-') ? t.id.replace(/-[0-9]+$/, '') : `tx-d-${idx}`);
+    deliveryOrderIds.add(key);
+  });
+
   return {
     initial,
     counterSalesTotal,
-    counterSalesCount: counterTxs.length,
+    counterSalesCount: counterOrderIds.size,
     counterTxs,
     counterCash,
     counterDebito,
@@ -238,7 +250,7 @@ export function getCashSessionMetrics(
     counterMachineTotals,
     counterDiscounts: 0,
     deliverySalesTotal,
-    deliverySalesCount: deliveryTxs.length,
+    deliverySalesCount: deliveryOrderIds.size,
     deliveryTxs,
     deliveryCash,
     deliveryDebito,
@@ -249,7 +261,7 @@ export function getCashSessionMetrics(
     deliveryMachineTotals,
     deliveryDiscounts: 0,
     totalTurnover,
-    totalOrdersCount: counterTxs.length + deliveryTxs.length,
+    totalOrdersCount: counterOrderIds.size + deliveryOrderIds.size,
     totalSalesTxsCount: counterTxs.length + deliveryTxs.length,
     cashSales,
     debitoSales,

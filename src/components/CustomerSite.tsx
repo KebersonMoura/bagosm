@@ -745,7 +745,17 @@ export default function CustomerSite({
     }> = [];
 
     // 1. Produtos Prontos
-    readyProducts.filter(rp => rp.showOnHome !== false).forEach(rp => {
+    readyProducts.filter(rp => {
+      if (rp.showOnHome === false) return false;
+      // Quando estiver marcado promoção, só aparecer na página inicial na janela promoção e NÃO no nosso cardápio embaixo
+      const isPromo = Boolean(
+        rp.isPromo === true || 
+        rp.displaySection === 'promocao' || 
+        (Boolean(rp.badgeText) && rp.badgeText.toUpperCase().includes('PROMO'))
+      );
+      if (isPromo) return false;
+      return true;
+    }).forEach(rp => {
       let subcat = rp.subcategory?.trim();
       const isCombo = Boolean(rp.isCombo || rp.category === 'combo' || rp.showInComboSection);
       if (!subcat) {
@@ -823,14 +833,20 @@ export default function CustomerSite({
   }, [readyProducts]);
 
   const homeFeaturedCombos = useMemo(() => {
+    const isPromo = (p: ReadyProduct) => Boolean(
+      p.isPromo === true || 
+      p.displaySection === 'promocao' || 
+      (Boolean(p.badgeText) && p.badgeText.toUpperCase().includes('PROMO'))
+    );
+
     const list = readyProducts.filter(p => 
       p.showOnHome !== false && 
-      (p.showInComboSection || p.isCombo || p.displaySection === 'combo' || p.category === 'combo' || p.displaySection === 'destaques' || p.isPopular) &&
-      (!p.isPromo || p.isPopular || p.displaySection === 'destaques' || p.displaySection === 'all' || (p.isCombo && p.comboItems && p.comboItems.length > 0))
+      !isPromo(p) &&
+      (p.showInComboSection || p.isCombo || p.displaySection === 'combo' || p.category === 'combo' || p.displaySection === 'destaques' || p.isPopular)
     );
     if (list.length > 0) return list;
-    // Fallback de segurança: Se nenhum produto estiver marcado explicitamente, exibe os mais pedidos para garantir que a janela/seção DESTAQUE nunca suma da página
-    return readyProducts.filter(p => p.showOnHome !== false && (p.isPopular || p.category === 'sandwich')).slice(0, 3);
+    // Fallback de segurança: Se nenhum produto estiver marcado explicitamente, exibe os mais pedidos que não sejam promoção
+    return readyProducts.filter(p => p.showOnHome !== false && !isPromo(p) && (p.isPopular || p.category === 'sandwich')).slice(0, 3);
   }, [readyProducts]);
 
   const groupedBySubcategory = useMemo(() => {

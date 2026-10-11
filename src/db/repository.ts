@@ -1175,7 +1175,7 @@ export async function ensureDeliveriesTable(): Promise<void> {
       tipo_entrega VARCHAR(50) NOT NULL DEFAULT 'entrega',
       endereco_entrega TEXT DEFAULT NULL,
       taxa_entrega DECIMAL(10,2) NOT NULL DEFAULT 0.00,
-      forma_pagamento VARCHAR(50) DEFAULT NULL,
+      forma_pagamento VARCHAR(255) DEFAULT NULL,
       status_pedido VARCHAR(50) NOT NULL DEFAULT 'pendente',
       data_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
       created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

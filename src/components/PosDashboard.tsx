@@ -829,11 +829,24 @@ export default function PosDashboard({
           const pm = normalizeCashPaymentMethod(split.method || order.paymentMethod);
           const mName = formatMachineName(split.cardProvider || order.cardProvider, split.machineModel || order.machineModel);
 
+          const methodLabelMap: Record<string, string> = {
+            debito: 'Débito',
+            credito: 'Crédito',
+            pix: 'PIX',
+            dinheiro: 'Dinheiro',
+            vr: 'VR'
+          };
+          const mLabel = methodLabelMap[pm] || pm.toUpperCase();
+          const providerLabel = split.cardProvider ? ` (${split.cardProvider.toUpperCase()})` : '';
+          const splitInfo = order.paymentSplits!.length > 1 
+            ? ` [Fração ${idx + 1}/${order.paymentSplits!.length}: ${mLabel}${providerLabel}]` 
+            : '';
+
           const txObj: CashTransaction = {
             id: `tx-ord-${order.id}-${idx}`,
             type: 'sale',
             amount: splitAmount,
-            description: `Venda ${channelLabel} - Pedido #${order.code}`,
+            description: `Venda ${channelLabel} - Pedido #${order.code}${splitInfo}`,
             timestamp: order.createdAt,
             paymentMethod: pm,
             cardProvider: split.cardProvider || order.cardProvider,

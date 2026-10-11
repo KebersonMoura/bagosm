@@ -4824,14 +4824,15 @@ export default function AdminDashboard({
                           setEditingProduct(prev => ({
                             ...prev,
                             isPromo: isChecked,
-                            displaySection: isChecked ? (prev?.isPopular || prev?.displaySection === 'destaques' ? 'all' : 'promocao') : (prev?.isPopular ? 'destaques' : 'cardapio')
+                            isPopular: isChecked ? false : prev?.isPopular,
+                            displaySection: isChecked ? 'promocao' : (prev?.isPopular ? 'destaques' : 'cardapio')
                           }));
                         }}
                         className="mt-0.5 rounded border-gray-300 text-brand-green focus:ring-brand-green"
                       />
                       <div>
                         <span className="text-xs font-black block">🔥 Promoção</span>
-                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe no bloco especial de Promoções.</span>
+                        <span className="text-[10px] text-slate-500 font-normal leading-tight block mt-0.5">Exibe exclusivamente na Janela Promoção (acima de Destaque) e remove do cardápio embaixo.</span>
                       </div>
                     </label>
 
