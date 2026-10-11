@@ -2020,11 +2020,11 @@ export default function CustomerSite({
                       key={promoItem.id}
                       className="bg-white rounded-2xl border-2 border-rose-200/90 shadow-md hover:shadow-xl hover:border-rose-400 transition-all overflow-hidden flex flex-col justify-between group"
                     >
-                      {/* Imagem + Badges (Clique abre a janela de detalhes) */}
+                      {/* Imagem + Badges (Clique adiciona na sacola) */}
                       <div
-                        onClick={() => handleProductClick({ rawReadyProduct: promoItem, ...promoItem })}
+                        onClick={() => handleAddComboToCart(promoItem)}
                         className="relative h-44 sm:h-48 overflow-hidden bg-slate-100 cursor-pointer group/img"
-                        title="Clique para abrir a janela de detalhes desta promoção"
+                        title="Adicionar na sacola"
                       >
                         <img
                           src={promoImg}
@@ -2032,11 +2032,6 @@ export default function CustomerSite({
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                           referrerPolicy="no-referrer"
                         />
-                        <div className="absolute inset-0 bg-black/25 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center">
-                          <span className="bg-white/95 text-slate-900 text-xs font-black px-3 py-1.5 rounded-xl shadow-md flex items-center gap-1.5 transform translate-y-1 group-hover/img:translate-y-0 transition-transform">
-                            <Flame className="h-3.5 w-3.5 text-rose-600" /> Abrir Janela
-                          </span>
-                        </div>
                         <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
                           <span className="bg-rose-600 text-white font-black text-[10px] px-2 py-1 rounded-lg shadow-md uppercase flex items-center gap-1">
                             <Flame className="h-3 w-3" /> {promoItem.badgeText || 'PROMOÇÃO'}
@@ -2054,9 +2049,9 @@ export default function CustomerSite({
                       <div className="p-4 flex-1 flex flex-col justify-between space-y-3">
                         <div>
                           <h4
-                            onClick={() => handleProductClick({ rawReadyProduct: promoItem, ...promoItem })}
+                            onClick={() => handleAddComboToCart(promoItem)}
                             className="font-black text-slate-900 text-base sm:text-lg leading-snug group-hover:text-rose-600 transition-colors cursor-pointer"
-                            title="Clique para abrir a janela de detalhes deste produto em promoção"
+                            title="Adicionar na sacola"
                           >
                             {promoItem.name}
                           </h4>
@@ -2101,7 +2096,7 @@ export default function CustomerSite({
                           )}
                         </div>
 
-                        {/* Preço e Botão de Adicionar na Sacola + Janela */}
+                        {/* Preço e Botão Único: Adicionar na Sacola */}
                         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
                           <div>
                             <span className="text-[10px] font-bold text-rose-500 block uppercase">Preço Promocional</span>
@@ -2117,27 +2112,15 @@ export default function CustomerSite({
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleProductClick({ rawReadyProduct: promoItem, ...promoItem })}
-                              className="bg-rose-100 hover:bg-rose-200 text-rose-950 font-black text-xs px-2.5 py-2.5 rounded-xl transition-all flex items-center gap-1 cursor-pointer shrink-0 border border-rose-300 shadow-2xs"
-                              title="Abrir janela de detalhes e opções do item em promoção"
-                            >
-                              <Flame className="h-3.5 w-3.5 text-rose-600" />
-                              <span className="hidden xs:inline">Janela</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleAddComboToCart(promoItem)}
-                              className="bg-brand-green hover:bg-brand-green-dark text-white font-black text-xs sm:text-sm px-3.5 py-2.5 rounded-xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
-                              title="Adicionar na sacola"
-                            >
-                              <ShoppingBag className="h-4 w-4 text-brand-yellow" />
-                              <span>Adicionar na sacola</span>
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleAddComboToCart(promoItem)}
+                            className="bg-brand-green hover:bg-brand-green-dark text-white font-black text-xs sm:text-sm px-4 py-2.5 rounded-xl shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+                            title="Adicionar na sacola"
+                          >
+                            <ShoppingBag className="h-4 w-4 text-brand-yellow" />
+                            <span>Adicionar na sacola</span>
+                          </button>
                         </div>
                       </div>
                     </div>
