@@ -719,7 +719,7 @@ export default function App() {
             <p>© 2026 Bagô. Todos os direitos reservados.</p>
           </div>
           <div className="flex gap-4">
-            <span className="text-gray-400 font-medium">Desenvolvido por <strong className="text-gray-200">desenvolvatech</strong> em conformidade com as diretrizes da marca Bagô</span>
+            <span className="text-gray-400 font-medium">Desenvolvido por <strong className="text-gray-200">desenvolvatech</strong></span>
           </div>
         </div>
       </footer>
