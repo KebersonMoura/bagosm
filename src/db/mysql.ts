@@ -2,10 +2,10 @@ import mysql from 'mysql2/promise';
 
 // Configuração do Banco de Dados MySQL
 export const dbConfig = {
-  host: process.env.MYSQL_HOST || '108.179.253.50',
-  user: process.env.MYSQL_USER || 'jawsap29_bago',
+  host: process.env.MYSQL_HOST || '69.49.241.41',
+  user: process.env.MYSQL_USER || 'kebers41_kebers41',
   password: process.env.MYSQL_PASSWORD || '@K1e3b0e4',
-  database: process.env.MYSQL_DATABASE || 'jawsap29_bago_restaurant',
+  database: process.env.MYSQL_DATABASE || 'kebers41_bago_restaurant',
   port: Number(process.env.MYSQL_PORT) || 3306,
   waitForConnections: true,
   connectionLimit: 10,
