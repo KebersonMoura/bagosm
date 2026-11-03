@@ -8195,9 +8195,9 @@ export default function AdminDashboard({
                     </span>
                     <div className="flex items-center gap-1.5 text-slate-900">
                       <Server className="h-4 w-4 text-emerald-600" />
-                      <span className="font-extrabold text-sm">MySQL Relacional</span>
+                      <span className="font-extrabold text-sm">MySQL: 69.49.241.41</span>
                     </div>
-                    <span className="text-[11px] text-slate-500 mt-1 block">Porta 3000 (Produção)</span>
+                    <span className="text-[11px] text-slate-500 mt-1 block">kebers41_bago_restaurant</span>
                   </div>
                 </div>
               </div>
@@ -8303,7 +8303,7 @@ export default function AdminDashboard({
               />
             </div>
             <div className="text-xs text-slate-500 font-medium self-end sm:self-center flex items-center gap-3 flex-wrap">
-              <span>Total: <strong>{usersList.length}</strong> usuários cadastrados</span>
+              <span>Total: <strong>{usersList.length}</strong> usuários salvos no banco (69.49.241.41)</span>
               <button
                 type="button"
                 onClick={() => {

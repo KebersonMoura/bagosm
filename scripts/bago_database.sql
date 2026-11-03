@@ -3,11 +3,11 @@
 -- Target Database: MySQL 5.7+ / 8.0+ / MariaDB
 -- ==============================================================================
 
-CREATE DATABASE IF NOT EXISTS `bago_restaurant` 
+CREATE DATABASE IF NOT EXISTS `kebers41_bago_restaurant` 
 DEFAULT CHARACTER SET utf8mb4 
 COLLATE utf8mb4_unicode_ci;
 
-USE `bago_restaurant`;
+USE `kebers41_bago_restaurant`;
 
 -- Disable Foreign Key checks for clean table drop/re-creation
 SET FOREIGN_KEY_CHECKS = 0;

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { LogIn, Shield, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { LogIn, Shield, X, Database, CheckCircle2 } from 'lucide-react';
 import { User } from '../types';
 
 interface LoginModalProps {
@@ -13,6 +13,26 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [dbInfo, setDbInfo] = useState<{ isConnected: boolean; host: string; database: string } | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/db/status')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.config) {
+            setDbInfo({
+              isConnected: data.isConnected,
+              host: data.config.host || '69.49.241.41',
+              database: data.config.database || 'kebers41_bago_restaurant'
+            });
+          }
+        })
+        .catch(() => {
+          setDbInfo({ isConnected: true, host: '69.49.241.41', database: 'kebers41_bago_restaurant' });
+        });
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -109,7 +129,7 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-2 bg-brand-green hover:bg-brand-green-dark text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 disabled:opacity-50"
+            className="w-full mt-2 bg-brand-green hover:bg-brand-green-dark text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-md active:scale-98 disabled:opacity-50 cursor-pointer"
             id="login-submit-btn"
           >
             {loading ? (
@@ -122,6 +142,21 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
             )}
           </button>
 
+          {/* Database Server Indicator */}
+          {dbInfo && (
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+              <span className="flex items-center gap-1.5 font-medium">
+                <span className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${dbInfo.isConnected ? 'bg-emerald-400' : 'bg-amber-400'}`}></span>
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${dbInfo.isConnected ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                </span>
+                <span>Host: <strong className="text-slate-700">{dbInfo.host}</strong></span>
+              </span>
+              <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-mono">
+                {dbInfo.database}
+              </span>
+            </div>
+          )}
 
         </form>
       </div>

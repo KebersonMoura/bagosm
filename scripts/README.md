@@ -12,7 +12,7 @@ Este diretório contém os scripts SQL para criação do banco de dados relacion
 
 ## 🗄️ Estrutura do Banco de Dados
 
-Nome do Banco de Dados: `bago_restaurant`  
+Nome do Banco de Dados: `kebers41_bago_restaurant`  
 Charset: `utf8mb4_unicode_ci`
 
 ### Tabelas Criadas:
