@@ -17,14 +17,19 @@ export default function LoginModal({ isOpen, onClose, onLoginSuccess }: LoginMod
 
   useEffect(() => {
     if (isOpen) {
-      fetch('/api/db/status')
+      fetch('/api/db/status?t=' + Date.now(), { cache: 'no-store' })
         .then(res => res.json())
         .then(data => {
           if (data && data.config) {
+            const raw = data.config.host;
+            const validHost = (!raw || raw === '108.179.253.50') ? '69.49.241.41' : raw;
+            const validDb = (!data.config.database || data.config.database.includes('jawsap')) 
+              ? 'kebers41_bago_restaurant' 
+              : data.config.database;
             setDbInfo({
               isConnected: data.isConnected,
-              host: data.config.host || '69.49.241.41',
-              database: data.config.database || 'kebers41_bago_restaurant'
+              host: validHost,
+              database: validDb
             });
           }
         })

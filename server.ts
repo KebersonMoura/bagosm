@@ -682,6 +682,9 @@ async function startServer() {
 
   // MySQL DB Status Endpoint
   app.get('/api/db/status', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     const status = getDbStatus();
     res.json(status);
   });

@@ -1,11 +1,20 @@
 import mysql from 'mysql2/promise';
 
-// Configuração do Banco de Dados MySQL
+// Configuração do Banco de Dados MySQL (Forçado para 69.49.241.41)
+const rawHost = (process.env.MYSQL_HOST || '').trim();
+const resolvedHost = (!rawHost || rawHost === '108.179.253.50') ? '69.49.241.41' : rawHost;
+
+const rawUser = (process.env.MYSQL_USER || '').trim();
+const resolvedUser = (!rawUser || rawUser === 'jawsap29_bago') ? 'kebers41_kebers41' : rawUser;
+
+const rawDb = (process.env.MYSQL_DATABASE || '').trim();
+const resolvedDb = (!rawDb || rawDb === 'jawsap29_bago_restaurant' || rawDb === 'bago_restaurant') ? 'kebers41_bago_restaurant' : rawDb;
+
 export const dbConfig = {
-  host: process.env.MYSQL_HOST || '69.49.241.41',
-  user: process.env.MYSQL_USER || 'kebers41_kebers41',
+  host: resolvedHost,
+  user: resolvedUser,
   password: process.env.MYSQL_PASSWORD || '@K1e3b0e4',
-  database: process.env.MYSQL_DATABASE || 'kebers41_bago_restaurant',
+  database: resolvedDb,
   port: Number(process.env.MYSQL_PORT) || 3306,
   waitForConnections: true,
   connectionLimit: 10,
