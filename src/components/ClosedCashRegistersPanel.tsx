@@ -522,6 +522,11 @@ export const ClosedCashRegistersPanel: React.FC<ClosedCashRegistersPanelProps> =
                         🍽️ VR: R$ {m.vrSales.toFixed(2).replace('.', ',')}
                       </span>
                     )}
+                    {(m.loyaltyOrdersCount ?? 0) > 0 && (
+                      <span className="bg-amber-50 border border-amber-200 text-amber-900 text-[10px] font-bold px-2 py-0.5 rounded-md">
+                        🎁 Fidelidade: {m.loyaltyOrdersCount} ped. (R$ 0,00)
+                      </span>
+                    )}
                   </div>
 
                   {/* Cash Drawer Reconciliation */}
@@ -845,6 +850,12 @@ export const ClosedCashRegistersPanel: React.FC<ClosedCashRegistersPanelProps> =
                             <div className="bg-white p-2.5 rounded-xl border border-slate-200 col-span-2">
                               <span className="text-[10px] font-bold text-slate-400 uppercase">Vale Refeição (VR)</span>
                               <div className="font-black text-slate-900">R$ {m.vrSales.toFixed(2).replace('.', ',')}</div>
+                            </div>
+                          )}
+                          {(m.loyaltyOrdersCount ?? 0) > 0 && (
+                            <div className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 col-span-2">
+                              <span className="text-[10px] font-bold text-amber-700 uppercase">🎁 Cartão Fidelidade (Grátis)</span>
+                              <div className="font-black text-amber-900">{m.loyaltyOrdersCount} pedido(s) • R$ 0,00</div>
                             </div>
                           )}
                         </div>

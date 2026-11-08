@@ -73,6 +73,8 @@ export interface Order {
   createdBy?: string;
   couponCode?: string;
   discountAmount?: number;
+  isLoyaltyReward?: boolean;
+  loyaltyCardId?: string;
 }
 
 export interface DeliveryTableRow {
@@ -190,7 +192,7 @@ export interface Ingredient {
 }
 
 export type CustomerType = 'cliente' | 'funcionario';
-export type PaymentMethod = 'debito' | 'credito' | 'pix' | 'dinheiro';
+export type PaymentMethod = 'debito' | 'credito' | 'pix' | 'dinheiro' | 'fidelidade';
 
 export interface User {
   id: string;

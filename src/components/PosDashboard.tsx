@@ -46,9 +46,11 @@ import {
   Calendar,
   Bike,
   Store,
-  Truck
+  Truck,
+  Award,
+  Gift
 } from 'lucide-react';
-import { ReadyProduct, Ingredient, Order, OrderStatus, User, CustomerType, PaymentMethod, CashRegisterSession, CashTransaction, CustomSandwich, PaymentSplit, OrderItem, Coupon, CardMachine } from '../types';
+import { ReadyProduct, Ingredient, Order, OrderStatus, User, CustomerType, PaymentMethod, CashRegisterSession, CashTransaction, CustomSandwich, PaymentSplit, OrderItem, Coupon, CardMachine, LoyaltyCard } from '../types';
 import { printThermalReceipt } from '../utils/printReceipt';
 import { calculateAssemblyExtras, getOptionStatus } from '../utils/assemblyRules';
 import { BuildSandwichModal } from './BuildSandwichModal';
@@ -350,6 +352,29 @@ export default function PosDashboard({
   const [cardProvider, setCardProvider] = useState<string>('');
   const [machineModel, setMachineModel] = useState<string>('');
   const [cashReceived, setCashReceived] = useState<string>('');
+
+  // Cartão Fidelidade State (Pedido Grátis R$ 0,00)
+  const [isLoyaltyReward, setIsLoyaltyReward] = useState<boolean>(false);
+  const [availableLoyaltyCards, setAvailableLoyaltyCards] = useState<LoyaltyCard[]>([]);
+  const [selectedLoyaltyCardId, setSelectedLoyaltyCardId] = useState<string>('');
+
+  const fetchLoyaltyCards = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/loyalty-cards?t=' + Date.now());
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setAvailableLoyaltyCards(data);
+        }
+      }
+    } catch (err) {
+      console.warn('Error fetching loyalty cards in POS:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLoyaltyCards();
+  }, [fetchLoyaltyCards]);
 
   // Dynamic Card Machines State (from DB)
   const [cardMachines, setCardMachines] = useState<CardMachine[]>([
@@ -709,9 +734,10 @@ export default function PosDashboard({
     return pName;
   };
 
-  const normalizeCashPaymentMethod = (pm?: string): 'dinheiro' | 'debito' | 'credito' | 'pix' | 'vr' => {
+  const normalizeCashPaymentMethod = (pm?: string): 'dinheiro' | 'debito' | 'credito' | 'pix' | 'vr' | 'fidelidade' => {
     if (!pm) return 'debito';
     const clean = String(pm).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    if (clean.includes('fidelidade') || clean.includes('gratis') || clean.includes('premio')) return 'fidelidade';
     if (clean.includes('dinheiro') || clean.includes('cash') || clean.includes('especie')) return 'dinheiro';
     if (clean.includes('pix')) return 'pix';
     if (clean.includes('credito') || clean.includes('credit')) return 'credito';
@@ -748,6 +774,8 @@ export default function PosDashboard({
       totalTurnover: 0,
       totalOrdersCount: 0,
       totalSalesTxsCount: 0,
+      loyaltyOrdersCount: 0,
+      loyaltyOrdersTotal: 0,
       cashSales: 0,
       debitoSales: 0,
       creditoSales: 0,
@@ -807,6 +835,9 @@ export default function PosDashboard({
     const deliveryMachineTotals: Record<string, number> = {};
     const deliveryOrderIds = new Set<string>();
 
+    let loyaltyOrdersCount = 0;
+    let loyaltyOrdersTotal = 0;
+
     const combinedMachineTotals: Record<string, number> = {};
     const processedOrderIds = new Set<string>();
 
@@ -834,7 +865,8 @@ export default function PosDashboard({
             credito: 'Crédito',
             pix: 'PIX',
             dinheiro: 'Dinheiro',
-            vr: 'VR'
+            vr: 'VR',
+            fidelidade: 'Fidelidade'
           };
           const mLabel = methodLabelMap[pm] || pm.toUpperCase();
           const providerLabel = split.cardProvider ? ` (${split.cardProvider.toUpperCase()})` : '';
@@ -859,7 +891,7 @@ export default function PosDashboard({
             channel: channel
           };
 
-          if (pm !== 'dinheiro') {
+          if (pm !== 'dinheiro' && pm !== 'fidelidade') {
             const mLabel = mName || 'Sem Maquininha Especificada';
             combinedMachineTotals[mLabel] = (combinedMachineTotals[mLabel] || 0) + splitAmount;
           }
@@ -872,9 +904,13 @@ export default function PosDashboard({
             else if (pm === 'credito') deliveryCredito += splitAmount;
             else if (pm === 'pix') deliveryPix += splitAmount;
             else if (pm === 'vr') deliveryVr += splitAmount;
+            else if (pm === 'fidelidade') {
+              loyaltyOrdersCount++;
+              loyaltyOrdersTotal += splitAmount;
+            }
             else deliveryDebito += splitAmount;
 
-            if (pm !== 'dinheiro') {
+            if (pm !== 'dinheiro' && pm !== 'fidelidade') {
               const mLabel = mName || 'Sem Maquininha Especificada';
               deliveryMachineTotals[mLabel] = (deliveryMachineTotals[mLabel] || 0) + splitAmount;
             }
@@ -886,9 +922,13 @@ export default function PosDashboard({
             else if (pm === 'credito') counterCredito += splitAmount;
             else if (pm === 'pix') counterPix += splitAmount;
             else if (pm === 'vr') counterVr += splitAmount;
+            else if (pm === 'fidelidade') {
+              loyaltyOrdersCount++;
+              loyaltyOrdersTotal += splitAmount;
+            }
             else counterDebito += splitAmount;
 
-            if (pm !== 'dinheiro') {
+            if (pm !== 'dinheiro' && pm !== 'fidelidade') {
               const mLabel = mName || 'Sem Maquininha Especificada';
               counterMachineTotals[mLabel] = (counterMachineTotals[mLabel] || 0) + splitAmount;
             }
@@ -916,7 +956,7 @@ export default function PosDashboard({
           channel: channel
         };
 
-        if (pm !== 'dinheiro') {
+        if (pm !== 'dinheiro' && pm !== 'fidelidade') {
           const mLabel = mName || 'Sem Maquininha Especificada';
           combinedMachineTotals[mLabel] = (combinedMachineTotals[mLabel] || 0) + orderAmount;
         }
@@ -929,9 +969,13 @@ export default function PosDashboard({
           else if (pm === 'credito') deliveryCredito += orderAmount;
           else if (pm === 'pix') deliveryPix += orderAmount;
           else if (pm === 'vr') deliveryVr += orderAmount;
+          else if (pm === 'fidelidade') {
+            loyaltyOrdersCount++;
+            loyaltyOrdersTotal += orderAmount;
+          }
           else deliveryDebito += orderAmount;
 
-          if (pm !== 'dinheiro') {
+          if (pm !== 'dinheiro' && pm !== 'fidelidade') {
             const mLabel = mName || 'Sem Maquininha Especificada';
             deliveryMachineTotals[mLabel] = (deliveryMachineTotals[mLabel] || 0) + orderAmount;
           }
@@ -943,9 +987,13 @@ export default function PosDashboard({
           else if (pm === 'credito') counterCredito += orderAmount;
           else if (pm === 'pix') counterPix += orderAmount;
           else if (pm === 'vr') counterVr += orderAmount;
+          else if (pm === 'fidelidade') {
+            loyaltyOrdersCount++;
+            loyaltyOrdersTotal += orderAmount;
+          }
           else counterDebito += orderAmount;
 
-          if (pm !== 'dinheiro') {
+          if (pm !== 'dinheiro' && pm !== 'fidelidade') {
             const mLabel = mName || 'Sem Maquininha Especificada';
             counterMachineTotals[mLabel] = (counterMachineTotals[mLabel] || 0) + orderAmount;
           }
@@ -1080,7 +1128,9 @@ export default function PosDashboard({
       sangrias,
       expectedCashInDrawer,
       actualCashInDrawer,
-      cashDifference
+      cashDifference,
+      loyaltyOrdersCount,
+      loyaltyOrdersTotal
     };
   };
 
@@ -1981,11 +2031,11 @@ export default function PosDashboard({
     ? (parseFloat((deliveryFeeInput || '0').replace(',', '.')) || 0)
     : 0;
   const cartSubtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
-  const totalAmount = Math.max(0, cartSubtotal + deliveryFeeNum - posDiscountAmount);
+  const totalAmount = isLoyaltyReward ? 0 : Math.max(0, cartSubtotal + deliveryFeeNum - posDiscountAmount);
 
   // Cash calculations
   const numericCashReceived = parseFloat(cashReceived.replace(',', '.')) || 0;
-  const changeAmount = paymentMethod === 'dinheiro' && numericCashReceived > totalAmount 
+  const changeAmount = (!isLoyaltyReward && paymentMethod === 'dinheiro' && numericCashReceived > totalAmount)
     ? numericCashReceived - totalAmount 
     : 0;
 
@@ -2057,6 +2107,8 @@ export default function PosDashboard({
       { id: 'sp-1', method: '', amount: '', cardProvider: '', cashReceived: '' },
       { id: 'sp-2', method: '', amount: '', cardProvider: '', cashReceived: '' }
     ]);
+    setIsLoyaltyReward(false);
+    setSelectedLoyaltyCardId('');
     setEditingPosOrderId(null);
   };
 
@@ -2355,7 +2407,19 @@ export default function PosDashboard({
     let finalChangeAmount: number | undefined = undefined;
     let finalSplits: PaymentSplit[] = [];
 
-    if (paymentMode === 'single') {
+    if (isLoyaltyReward) {
+      finalPaymentMethod = 'Cartão Fidelidade (Grátis)';
+      finalCardProvider = undefined;
+      finalCashReceived = 0;
+      finalChangeAmount = 0;
+      finalSplits = [{
+        method: 'fidelidade',
+        amount: 0,
+        cardProvider: undefined,
+        cashReceived: 0,
+        changeAmount: 0
+      }];
+    } else if (paymentMode === 'single') {
       // 3. Mandatory Payment Method selection
       if (!paymentMethod) {
         showToast('Obrigatório: Por favor, selecione a FORMA DE PAGAMENTO!', 'alert');
@@ -2516,8 +2580,10 @@ export default function PosDashboard({
       changeAmount: finalChangeAmount,
       paymentSplits: finalSplits,
       couponCode: appliedPosCoupon ? appliedPosCoupon.code : undefined,
-      discountAmount: posDiscountAmount > 0 ? posDiscountAmount : undefined,
-      totalPrice: totalAmount,
+      discountAmount: isLoyaltyReward ? (cartSubtotal + feeToSave) : (posDiscountAmount > 0 ? posDiscountAmount : undefined),
+      totalPrice: isLoyaltyReward ? 0 : totalAmount,
+      isLoyaltyReward: isLoyaltyReward,
+      loyaltyCardId: selectedLoyaltyCardId || undefined,
       isPosOrder: true,
       sellerName: userName,
       createdBy: userName,
@@ -3344,36 +3410,54 @@ export default function PosDashboard({
               </div>
 
               {/* Total Display */}
-              <div className="bg-slate-900 text-white p-3.5 rounded-xl mb-4 space-y-2">
-                {(posDiscountAmount > 0 || (deliveryType === 'entrega' && deliveryFeeNum > 0)) && (
-                  <div className="space-y-1 text-xs font-semibold border-b border-slate-800 pb-2">
-                    <div className="flex justify-between text-slate-300">
+              <div className={`text-white p-3.5 rounded-xl mb-4 space-y-2 transition-all ${
+                isLoyaltyReward 
+                  ? 'bg-gradient-to-br from-amber-600 via-amber-700 to-amber-800 ring-2 ring-amber-300 shadow-md' 
+                  : 'bg-slate-900'
+              }`}>
+                {(isLoyaltyReward || posDiscountAmount > 0 || (deliveryType === 'entrega' && deliveryFeeNum > 0)) && (
+                  <div className="space-y-1 text-xs font-semibold border-b border-white/20 pb-2">
+                    <div className="flex justify-between text-slate-200">
                       <span>Subtotal Itens:</span>
                       <span>R$ {cartSubtotal.toFixed(2).replace('.', ',')}</span>
                     </div>
                     {deliveryType === 'entrega' && deliveryFeeNum > 0 && (
-                      <div className="flex justify-between text-amber-400 font-bold">
+                      <div className="flex justify-between text-amber-200 font-bold">
                         <span className="flex items-center gap-1">🛵 Taxa de Entrega (Frete):</span>
                         <span>+ R$ {deliveryFeeNum.toFixed(2).replace('.', ',')}</span>
                       </div>
                     )}
-                    {posDiscountAmount > 0 && (
-                      <div className="flex justify-between text-brand-yellow font-bold">
-                        <span>Desconto Cupom ({appliedPosCoupon?.code}):</span>
-                        <span>- R$ {posDiscountAmount.toFixed(2).replace('.', ',')}</span>
+                    {isLoyaltyReward ? (
+                      <div className="flex justify-between text-emerald-200 font-black">
+                        <span className="flex items-center gap-1">🎁 Desconto Fidelidade (100%):</span>
+                        <span>- R$ {(cartSubtotal + (deliveryType === 'entrega' ? deliveryFeeNum : 0)).toFixed(2).replace('.', ',')}</span>
                       </div>
+                    ) : (
+                      posDiscountAmount > 0 && (
+                        <div className="flex justify-between text-brand-yellow font-bold">
+                          <span>Desconto Cupom ({appliedPosCoupon?.code}):</span>
+                          <span>- R$ {posDiscountAmount.toFixed(2).replace('.', ',')}</span>
+                        </div>
+                      )
                     )}
                   </div>
                 )}
 
                 <div className="flex justify-between items-center">
                   <div>
-                    <span className="text-[11px] uppercase tracking-wider font-bold text-slate-400">Total a Pagar</span>
-                    <div className="text-2xl font-black text-brand-yellow">
-                      R$ {totalAmount.toFixed(2).replace('.', ',')}
+                    <span className="text-[11px] uppercase tracking-wider font-bold opacity-80 block">
+                      {isLoyaltyReward ? 'Total no Fechamento do Caixa' : 'Total a Pagar'}
+                    </span>
+                    <div className="text-2xl font-black text-brand-yellow flex items-baseline gap-1.5">
+                      <span>R$ {totalAmount.toFixed(2).replace('.', ',')}</span>
+                      {isLoyaltyReward && (
+                        <span className="text-[11px] font-black uppercase tracking-wider bg-emerald-500 text-white px-2 py-0.5 rounded-full">
+                          Grátis
+                        </span>
+                      )}
                     </div>
                   </div>
-                  <span className="text-xs text-slate-300 font-semibold bg-slate-800 px-2.5 py-1 rounded-lg">
+                  <span className="text-xs text-white font-semibold bg-black/25 px-2.5 py-1 rounded-lg">
                     {cart.reduce((a, b) => a + b.quantity, 0)} itens
                   </span>
                 </div>
@@ -3680,8 +3764,115 @@ export default function PosDashboard({
                   )}
                 </div>
 
-                {/* Payment Header with Single vs Split Mode Selection */}
-                <div className="pt-2 border-t border-slate-100 space-y-2">
+                {/* OPÇÃO CARTÃO FIDELIDADE */}
+                <div className="pt-2.5 border-t border-slate-100 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-800 uppercase flex items-center gap-1.5">
+                      <Award className="h-4 w-4 text-amber-500" />
+                      <span>É do Cartão Fidelidade?</span>
+                    </label>
+                    {isLoyaltyReward && (
+                      <span className="text-[10px] font-black bg-amber-500 text-white px-2 py-0.5 rounded-full shadow-2xs animate-pulse">
+                        🎁 VALOR R$ 0,00 NO CAIXA
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsLoyaltyReward(false);
+                        setSelectedLoyaltyCardId('');
+                        if (paymentMethod === 'fidelidade') setPaymentMethod('');
+                      }}
+                      className={`py-2 px-3 rounded-xl border text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        !isLoyaltyReward
+                          ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>❌ Não (Venda Normal)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsLoyaltyReward(true);
+                        setPaymentMode('single');
+                        setPaymentMethod('fidelidade');
+                        setCardProvider('');
+                        setCashReceived('');
+                        fetchLoyaltyCards();
+                      }}
+                      className={`py-2 px-3 rounded-xl border text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        isLoyaltyReward
+                          ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-300'
+                          : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
+                      }`}
+                    >
+                      <Gift className="h-3.5 w-3.5" />
+                      <span>🎁 Sim (Cartão Fidelidade)</span>
+                    </button>
+                  </div>
+
+                  {/* Detalhes e Vínculo de Cliente do Cartão Fidelidade */}
+                  {isLoyaltyReward && (
+                    <div className="bg-gradient-to-br from-amber-50 to-amber-100/70 p-3 rounded-2xl border border-amber-300 space-y-2 animate-in fade-in duration-150">
+                      <div className="flex items-start gap-2">
+                        <Sparkles className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                        <div className="text-xs text-amber-950">
+                          <strong className="font-extrabold block">Resgate de Pedido Grátis (10 Consumos)</strong>
+                          <span className="text-[11px] text-amber-900 block mt-0.5">
+                            O valor deste pedido é <strong>R$ 0,00</strong>. No fechamento do caixa e nos relatórios de vendas, o valor contabilizado será <strong>R$ 0,00</strong>.
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Vincular Cliente Fidelidade Cadastrado (Opcional) */}
+                      {availableLoyaltyCards.length > 0 && (
+                        <div className="pt-2 border-t border-amber-200/80 space-y-1">
+                          <label className="text-[10px] font-bold text-amber-950 uppercase flex items-center justify-between">
+                            <span>Vincular Cliente Fidelidade:</span>
+                            <span className="text-[9px] text-amber-700">Opcional</span>
+                          </label>
+                          <select
+                            value={selectedLoyaltyCardId}
+                            onChange={(e) => {
+                              const cardId = e.target.value;
+                              setSelectedLoyaltyCardId(cardId);
+                              const matched = availableLoyaltyCards.find(c => c.id === cardId);
+                              if (matched) {
+                                setCustomerName(matched.customerName);
+                              }
+                            }}
+                            className="w-full px-3 py-1.5 bg-white border border-amber-300 rounded-xl text-xs font-semibold text-slate-800 focus:outline-hidden"
+                          >
+                            <option value="">-- Selecione ou digite o nome do cliente --</option>
+                            {availableLoyaltyCards
+                              .filter(c => (c.consumptionCount >= (c.targetCount || 10) && !c.rewardClaimed) || c.id === selectedLoyaltyCardId)
+                              .map(c => (
+                                <option key={c.id} value={c.id}>
+                                  🎁 {c.customerName} ({c.consumptionCount}/{c.targetCount || 10} consumos - Liberado)
+                                </option>
+                              ))}
+                            {availableLoyaltyCards
+                              .filter(c => !(c.consumptionCount >= (c.targetCount || 10) && !c.rewardClaimed) && c.id !== selectedLoyaltyCardId)
+                              .map(c => (
+                                <option key={c.id} value={c.id}>
+                                  {c.customerName} ({c.consumptionCount}/{c.targetCount || 10} consumos)
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {!isLoyaltyReward ? (
+                  /* Payment Header with Single vs Split Mode Selection */
+                  <div className="pt-2 border-t border-slate-100 space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1">
                       <span>Forma de Pagamento</span>
@@ -4056,6 +4247,32 @@ export default function PosDashboard({
                     </div>
                   )}
                 </div>
+                ) : (
+                  /* Loyalty Payment Info Banner */
+                  <div className="pt-2 border-t border-slate-100 space-y-2">
+                    <label className="text-xs font-extrabold text-slate-800 uppercase flex items-center gap-1.5">
+                      <Gift className="h-4 w-4 text-emerald-600" />
+                      <span>Forma de Pagamento: Cartão Fidelidade</span>
+                    </label>
+
+                    <div className="bg-gradient-to-br from-emerald-500/10 via-amber-500/10 to-emerald-500/5 border-2 border-emerald-400 rounded-2xl p-4 text-center space-y-2 shadow-xs">
+                      <div className="inline-flex p-2.5 bg-emerald-100 text-emerald-800 rounded-2xl">
+                        <Gift className="h-6 w-6 text-emerald-700 animate-bounce" />
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="text-sm font-black text-slate-900 uppercase tracking-tight">
+                          🎁 Pedido do Cartão Fidelidade
+                        </div>
+                        <p className="text-xs font-black text-emerald-700">
+                          Valor Cobrado do Cliente: R$ 0,00 (100% Grátis)
+                        </p>
+                      </div>
+                      <p className="text-[11px] text-slate-600 font-medium">
+                        Venda de recompensa fidelidade. Não exige recebimento em dinheiro ou maquininha. No fechamento do caixa e faturamento, o valor contabilizado é <strong>R$ 0,00</strong>.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -4066,14 +4283,16 @@ export default function PosDashboard({
                 const missingFields: string[] = [];
                 if (!customerName.trim()) missingFields.push('Nome do Cliente');
                 if (!tableNumber.trim()) missingFields.push('Nº da Comanda');
-                if (paymentMode === 'single') {
-                  if (!paymentMethod) missingFields.push('Forma de Pagamento');
-                  else if (['debito', 'credito', 'vr'].includes(paymentMethod) && !cardProvider) {
-                    missingFields.push('Maquininha/Operadora');
+                if (!isLoyaltyReward) {
+                  if (paymentMode === 'single') {
+                    if (!paymentMethod) missingFields.push('Forma de Pagamento');
+                    else if (['debito', 'credito', 'vr'].includes(paymentMethod) && !cardProvider) {
+                      missingFields.push('Maquininha/Operadora');
+                    }
+                  } else {
+                    const sum = paymentSplits.reduce((acc, curr) => acc + (parseFloat((curr.amount || '0').replace(',', '.')) || 0), 0);
+                    if (Math.abs(sum - totalAmount) > 0.02) missingFields.push('Soma dos Pagamentos Múltiplos');
                   }
-                } else {
-                  const sum = paymentSplits.reduce((acc, curr) => acc + (parseFloat((curr.amount || '0').replace(',', '.')) || 0), 0);
-                  if (Math.abs(sum - totalAmount) > 0.02) missingFields.push('Soma dos Pagamentos Múltiplos');
                 }
 
                 if (cart.length > 0 && missingFields.length > 0) {
@@ -4090,7 +4309,11 @@ export default function PosDashboard({
               <button
                 onClick={handleCheckout}
                 disabled={submitting || cart.length === 0}
-                className="w-full py-4 bg-brand-green hover:bg-brand-green-dark text-white font-black text-base uppercase tracking-wide rounded-2xl flex items-center justify-center gap-2.5 shadow-lg hover:shadow-xl transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ring-2 ring-emerald-400/30"
+                className={`w-full py-4 text-white font-black text-base uppercase tracking-wide rounded-2xl flex items-center justify-center gap-2.5 shadow-lg hover:shadow-xl transition-all active:scale-98 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ring-2 ${
+                  isLoyaltyReward
+                    ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 ring-amber-300'
+                    : 'bg-brand-green hover:bg-brand-green-dark ring-emerald-400/30'
+                }`}
               >
                 {submitting ? (
                   <div className="flex items-center gap-2">
@@ -4099,8 +4322,17 @@ export default function PosDashboard({
                   </div>
                 ) : (
                   <>
-                    <Zap className="h-5 w-5 text-brand-yellow fill-brand-yellow animate-bounce" />
-                    <span>{editingPosOrderId ? "Salvar e Atualizar Pedido" : `⚡ Concluir Venda (R$ ${totalAmount.toFixed(2).replace('.', ',')})`}</span>
+                    {isLoyaltyReward ? (
+                      <>
+                        <Gift className="h-5 w-5 text-white animate-bounce" />
+                        <span>⚡ Concluir Entrega Fidelidade (R$ 0,00 - Grátis)</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-5 w-5 text-brand-yellow fill-brand-yellow animate-bounce" />
+                        <span>{editingPosOrderId ? "Salvar e Atualizar Pedido" : `⚡ Concluir Venda (R$ ${totalAmount.toFixed(2).replace('.', ',')})`}</span>
+                      </>
+                    )}
                   </>
                 )}
               </button>
@@ -4907,6 +5139,19 @@ export default function PosDashboard({
                 </span>
                 <span className="text-emerald-400 text-sm">R$ {registerTotals.totalTurnover.toFixed(2).replace('.', ',')}</span>
               </div>
+
+              {/* Pedidos Fidelidade (Grátis R$ 0,00) */}
+              {(registerTotals.loyaltyOrdersCount ?? 0) > 0 && (
+                <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between text-xs font-bold text-amber-900">
+                  <span className="flex items-center gap-1.5">
+                    <Gift className="h-4 w-4 text-amber-600" />
+                    <span>Cartão Fidelidade (Grátis):</span>
+                  </span>
+                  <span className="bg-amber-100 text-amber-950 font-black px-2 py-0.5 rounded-lg border border-amber-300">
+                    {registerTotals.loyaltyOrdersCount} pedido(s) • R$ 0,00
+                  </span>
+                </div>
+              )}
 
               {/* Movements & Drawer Info */}
               <div className="grid grid-cols-2 gap-2 text-slate-700 pt-1">

@@ -2333,10 +2333,15 @@ async function startServer() {
       orderCode = await dbGenerateUniqueOrderCode();
     }
 
+    const isLoyaltyReward = Boolean(req.body.isLoyaltyReward);
     const calculatedDeliveryFee = deliveryType === 'entrega' ? (Number(req.body.deliveryFee) || 0) : 0;
     const itemsSubtotal = sanitizedItems.reduce((acc: number, item: any) => acc + (Number(item.price) || 0) * (Number(item.quantity) || 1), 0);
-    const orderDiscountAmount = Math.max(0, Number(req.body.discountAmount) || 0);
-    const calculatedTotalPrice = Math.max(0, itemsSubtotal + calculatedDeliveryFee - orderDiscountAmount);
+    const orderDiscountAmount = isLoyaltyReward
+      ? (itemsSubtotal + calculatedDeliveryFee)
+      : Math.max(0, Number(req.body.discountAmount) || 0);
+    const calculatedTotalPrice = isLoyaltyReward
+      ? 0
+      : Math.max(0, itemsSubtotal + calculatedDeliveryFee - orderDiscountAmount);
 
     const newOrder: Order = {
       id: `ord-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -2347,6 +2352,8 @@ async function startServer() {
       totalPrice: calculatedTotalPrice,
       couponCode: req.body.couponCode ? String(req.body.couponCode).trim().toUpperCase() : undefined,
       discountAmount: orderDiscountAmount > 0 ? orderDiscountAmount : undefined,
+      isLoyaltyReward,
+      loyaltyCardId: req.body.loyaltyCardId || undefined,
       status: 'pendente',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -2407,6 +2414,24 @@ async function startServer() {
       }
     }
 
+    if (newOrder.isLoyaltyReward && newOrder.loyaltyCardId) {
+      try {
+        const cCard = loyaltyCards.find(c => c.id === newOrder.loyaltyCardId);
+        if (cCard) {
+          cCard.rewardClaimed = true;
+          cCard.rewardClaimedAt = new Date().toISOString();
+          cCard.notes = `Retirado no PDV - Pedido #${newOrder.code}`;
+          cCard.updatedAt = new Date().toISOString();
+        }
+        if (getDbStatus().isConnected) {
+          await dbSetLoyaltyRewardClaimed(newOrder.loyaltyCardId, true, `Retirado no PDV - Pedido #${newOrder.code}`);
+        }
+        broadcastEvent('LOYALTY_REFRESH', loyaltyCards);
+      } catch (lErr) {
+        console.warn('[Server] Error updating loyalty card claim on order:', lErr);
+      }
+    }
+
     // Also register sale immediately or when finished? Let's register when created (since it's paid on order)
     sales.push({
       orderId: newOrder.id,
@@ -2430,9 +2455,10 @@ async function startServer() {
   });
 
   // Helper to normalize payment method string
-  function normalizePaymentMethodStr(pm?: string): 'dinheiro' | 'debito' | 'credito' | 'pix' | 'vr' {
+  function normalizePaymentMethodStr(pm?: string): 'dinheiro' | 'debito' | 'credito' | 'pix' | 'vr' | 'fidelidade' {
     if (!pm) return 'debito';
     const clean = String(pm).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    if (clean.includes('fidelidade') || clean.includes('gratis') || clean.includes('premio')) return 'fidelidade';
     if (clean.includes('dinheiro') || clean.includes('cash') || clean.includes('especie')) return 'dinheiro';
     if (clean.includes('pix')) return 'pix';
     if (clean.includes('credito') || clean.includes('credit')) return 'credito';
@@ -2880,9 +2906,14 @@ async function startServer() {
     const finalDeliveryType = updatedData.deliveryType ?? currentOrder.deliveryType;
     const finalDeliveryFee = updatedData.deliveryFee !== undefined ? Number(updatedData.deliveryFee) : (currentOrder.deliveryFee || 0);
     const finalDiscountAmount = updatedData.discountAmount !== undefined ? Number(updatedData.discountAmount) : (currentOrder.discountAmount || 0);
+    const isLoyaltyReward = updatedData.isLoyaltyReward !== undefined 
+      ? Boolean(updatedData.isLoyaltyReward) 
+      : Boolean(currentOrder.isLoyaltyReward);
 
     let newTotalPrice: number;
-    if (updatedData.totalPrice !== undefined) {
+    if (isLoyaltyReward) {
+      newTotalPrice = 0;
+    } else if (updatedData.totalPrice !== undefined) {
       newTotalPrice = Number(updatedData.totalPrice);
     } else if (updatedData.items) {
       const itemsSum = newItems.reduce((acc: number, item: any) => acc + (Number(item.price) * Number(item.quantity)), 0);
@@ -2901,6 +2932,8 @@ async function startServer() {
       status: updatedData.status ?? currentOrder.status,
       items: newItems,
       totalPrice: newTotalPrice,
+      isLoyaltyReward,
+      loyaltyCardId: updatedData.loyaltyCardId !== undefined ? updatedData.loyaltyCardId : currentOrder.loyaltyCardId,
       deliveryType: finalDeliveryType,
       deliveryFee: finalDeliveryFee,
       deliveryAddress: updatedData.deliveryAddress !== undefined ? updatedData.deliveryAddress : currentOrder.deliveryAddress,

@@ -48,7 +48,8 @@ export const printThermalReceipt = (order: Order, options?: { isKitchenTicket?: 
     credito: 'CRÉDITO',
     pix: 'PIX',
     dinheiro: 'DINHEIRO',
-    vr: 'VR'
+    vr: 'VR',
+    fidelidade: '🎁 CARTÃO FIDELIDADE (GRÁTIS)'
   };
 
   let paymentMethodText = '';

@@ -40,6 +40,8 @@ export interface CashSessionMetrics {
   expectedCashInDrawer: number;
   actualCashInDrawer: number;
   cashDifference: number;
+  loyaltyOrdersCount?: number;
+  loyaltyOrdersTotal?: number;
 }
 
 export function formatMachineName(cardProvider?: string, machineModel?: string): string {
@@ -49,9 +51,10 @@ export function formatMachineName(cardProvider?: string, machineModel?: string):
   return parts.join(' - ');
 }
 
-export function normalizeCashPaymentMethod(pm?: string): 'dinheiro' | 'debito' | 'credito' | 'pix' | 'vr' {
+export function normalizeCashPaymentMethod(pm?: string): 'dinheiro' | 'debito' | 'credito' | 'pix' | 'vr' | 'fidelidade' {
   if (!pm) return 'debito';
   const clean = String(pm).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  if (clean.includes('fidelidade') || clean.includes('gratis') || clean.includes('premio')) return 'fidelidade';
   if (clean.includes('dinheiro') || clean.includes('cash') || clean.includes('especie')) return 'dinheiro';
   if (clean.includes('pix')) return 'pix';
   if (clean.includes('credito') || clean.includes('credit')) return 'credito';
@@ -148,6 +151,9 @@ export function getCashSessionMetrics(
 
   const machineTotals: Record<string, number> = {};
 
+  let loyaltyOrdersCount = 0;
+  let loyaltyOrdersTotal = 0;
+
   txs.forEach(t => {
     if (t.type !== 'sale') return;
     const amount = Number(t.amount) || 0;
@@ -163,9 +169,13 @@ export function getCashSessionMetrics(
       else if (pm === 'credito') deliveryCredito += amount;
       else if (pm === 'pix') deliveryPix += amount;
       else if (pm === 'vr') deliveryVr += amount;
+      else if (pm === 'fidelidade') {
+        loyaltyOrdersCount++;
+        loyaltyOrdersTotal += amount;
+      }
       else deliveryDebito += amount;
 
-      if (machKey || pm !== 'dinheiro') {
+      if (pm !== 'dinheiro' && pm !== 'fidelidade') {
         const mLabel = machKey || 'Sem Maquininha Especificada';
         deliveryMachineTotals[mLabel] = (deliveryMachineTotals[mLabel] || 0) + amount;
       }
@@ -177,15 +187,19 @@ export function getCashSessionMetrics(
       else if (pm === 'credito') counterCredito += amount;
       else if (pm === 'pix') counterPix += amount;
       else if (pm === 'vr') counterVr += amount;
+      else if (pm === 'fidelidade') {
+        loyaltyOrdersCount++;
+        loyaltyOrdersTotal += amount;
+      }
       else counterDebito += amount;
 
-      if (machKey || pm !== 'dinheiro') {
+      if (pm !== 'dinheiro' && pm !== 'fidelidade') {
         const mLabel = machKey || 'Sem Maquininha Especificada';
         counterMachineTotals[mLabel] = (counterMachineTotals[mLabel] || 0) + amount;
       }
     }
 
-    if (machKey || pm !== 'dinheiro') {
+    if (pm !== 'dinheiro' && pm !== 'fidelidade') {
       const mLabel = machKey || 'Sem Maquininha Especificada';
       machineTotals[mLabel] = (machineTotals[mLabel] || 0) + amount;
     }
@@ -275,7 +289,9 @@ export function getCashSessionMetrics(
     sangrias,
     expectedCashInDrawer,
     actualCashInDrawer,
-    cashDifference
+    cashDifference,
+    loyaltyOrdersCount,
+    loyaltyOrdersTotal
   };
 }
 
@@ -471,6 +487,7 @@ export const printThermalClosingReport = (
           <div style="display: flex; justify-content: space-between;"><span>Consol. Crédito:</span> <span>R$ ${m.creditoSales.toFixed(2).replace('.', ',')}</span></div>
           <div style="display: flex; justify-content: space-between;"><span>Consol. PIX:</span> <span>R$ ${m.pixSales.toFixed(2).replace('.', ',')}</span></div>
           ${m.vrSales > 0 ? `<div style="display: flex; justify-content: space-between;"><span>Consol. VR:</span> <span>R$ ${m.vrSales.toFixed(2).replace('.', ',')}</span></div>` : ''}
+          ${(m.loyaltyOrdersCount || 0) > 0 ? `<div style="display: flex; justify-content: space-between; font-weight: bold; color: #b45309;"><span>🎁 Cartão Fidelidade (Grátis):</span> <span>${m.loyaltyOrdersCount} ped. (R$ 0,00)</span></div>` : ''}
         </div>
       </div>
 
@@ -660,6 +677,7 @@ export const printPdfClosingReport = (
           <div class="row"><span>💳 Cartão de Débito:</span> <strong>R$ ${m.debitoSales.toFixed(2).replace('.', ',')}</strong></div>
           <div class="row"><span>💳 Cartão de Crédito:</span> <strong>R$ ${m.creditoSales.toFixed(2).replace('.', ',')}</strong></div>
           ${m.vrSales > 0 ? `<div class="row"><span>🍽️ Vale Refeição (VR):</span> <strong>R$ ${m.vrSales.toFixed(2).replace('.', ',')}</strong></div>` : ''}
+          ${(m.loyaltyOrdersCount || 0) > 0 ? `<div class="row" style="color: #b45309;"><span>🎁 Cartão Fidelidade (Grátis):</span> <strong>${m.loyaltyOrdersCount} ped. (R$ 0,00)</strong></div>` : ''}
           <div class="row highlight"><span>Total Vendas:</span> <span>R$ ${m.totalTurnover.toFixed(2).replace('.', ',')}</span></div>
         </div>
 
