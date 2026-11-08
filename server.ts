@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
-import { Ingredient, Order, OrderStatus, SaleRecord, CustomizerStep, ReadyProduct, CashRegisterSession, CashTransaction, User, PurchaseRecord, PurchaseInvoice, PurchaseInvoiceItem, Coupon, StoreInfo, CardMachine } from './src/types';
+import { Ingredient, Order, OrderStatus, SaleRecord, CustomizerStep, ReadyProduct, CashRegisterSession, CashTransaction, User, PurchaseRecord, PurchaseInvoice, PurchaseInvoiceItem, Coupon, StoreInfo, CardMachine, LoyaltyCard } from './src/types';
 import { testDbConnection, getDbStatus, query } from './src/db/mysql';
 import { 
   initDatabaseTables, 
@@ -44,7 +44,12 @@ import {
   dbGetCardMachines,
   dbSaveCardMachine,
   dbDeleteCardMachine,
-  defaultCardMachinesSeed
+  defaultCardMachinesSeed,
+  dbGetLoyaltyCards,
+  dbSaveLoyaltyCard,
+  dbDeleteLoyaltyCard,
+  dbUpdateLoyaltyConsumption,
+  dbSetLoyaltyRewardClaimed
 } from './src/db/repository';
 import { DEFAULT_DELIVERY_SETTINGS, StoreDeliverySettings, checkDeliveryOpeningStatus } from './src/utils/deliverySettings';
 
@@ -66,6 +71,7 @@ let cashRegisterHistory: CashRegisterSession[] = [];
 let storeDeliverySettings: StoreDeliverySettings = { ...DEFAULT_DELIVERY_SETTINGS };
 let storeLogoUrl: string = '';
 let cardMachines: CardMachine[] = [...defaultCardMachinesSeed];
+let loyaltyCards: LoyaltyCard[] = [];
 let storeInfo: StoreInfo = {
   city: 'São Miguel - RN',
   phone: '(84) 99999-9999',
@@ -670,6 +676,11 @@ async function startServer() {
       if (dbMachs !== null && dbMachs.length > 0) {
         cardMachines = dbMachs;
       }
+      const dbLoyalty = await dbGetLoyaltyCards();
+      if (dbLoyalty !== null && dbLoyalty.length > 0) {
+        loyaltyCards = dbLoyalty;
+        console.log('[Server] Loaded loyalty cards from MySQL database:', loyaltyCards.length);
+      }
     } else {
       console.warn(`[MySQL] Startup ping warning: ${res.message}`);
     }
@@ -1127,6 +1138,224 @@ async function startServer() {
     } catch (err: any) {
       console.error('Error validating coupon:', err);
       res.status(500).json({ valid: false, message: 'Erro ao validar cupom.' });
+    }
+  });
+
+  // ==================== LOYALTY CARDS (CARTÃO FIDELIDADE) API ROUTES ====================
+  // GET all loyalty cards
+  app.get('/api/loyalty-cards', async (req, res) => {
+    try {
+      if (getDbStatus().isConnected) {
+        const dbCards = await dbGetLoyaltyCards();
+        if (dbCards) loyaltyCards = dbCards;
+      }
+      res.json(loyaltyCards);
+    } catch (err) {
+      console.error('Error fetching loyalty cards:', err);
+      res.json(loyaltyCards);
+    }
+  });
+
+  // GET lookup loyalty card by phone
+  app.get('/api/loyalty-cards/lookup', async (req, res) => {
+    try {
+      const { phone } = req.query;
+      if (!phone) return res.status(400).json({ error: 'Telefone é obrigatório.' });
+      
+      const cleanDigits = String(phone).replace(/\D/g, '');
+      if (getDbStatus().isConnected) {
+        const dbCards = await dbGetLoyaltyCards();
+        if (dbCards) loyaltyCards = dbCards;
+      }
+      const found = loyaltyCards.find(c => c.phone.replace(/\D/g, '') === cleanDigits);
+      if (found) {
+        return res.json({ found: true, card: found });
+      }
+      res.json({ found: false, card: null });
+    } catch (err) {
+      console.error('Error looking up loyalty card:', err);
+      res.status(500).json({ error: 'Erro ao buscar cartão fidelidade.' });
+    }
+  });
+
+  // POST create or update loyalty card
+  app.post('/api/loyalty-cards', async (req, res) => {
+    try {
+      const { id, customerName, phone, consumptionCount, targetCount, rewardClaimed, rewardClaimedAt, notes } = req.body;
+      if (!customerName || !phone) {
+        return res.status(400).json({ error: 'Nome completo e telefone são obrigatórios.' });
+      }
+
+      const cardId = id || `fid-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const currentCount = Number(consumptionCount) || 0;
+      const target = Number(targetCount) || 10;
+      const isClaimed = Boolean(rewardClaimed);
+
+      const existingIndex = loyaltyCards.findIndex(c => c.id === cardId);
+      const existing = existingIndex !== -1 ? loyaltyCards[existingIndex] : null;
+
+      const newCard: LoyaltyCard = {
+        id: cardId,
+        customerName: String(customerName).trim(),
+        phone: String(phone).trim(),
+        consumptionCount: currentCount,
+        targetCount: target,
+        rewardClaimed: isClaimed,
+        rewardClaimedAt: isClaimed ? (rewardClaimedAt || new Date().toISOString()) : null,
+        notes: notes ? String(notes).trim() : undefined,
+        lastPurchaseDate: existing?.lastPurchaseDate || new Date().toISOString(),
+        createdAt: existing?.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      if (existingIndex !== -1) {
+        loyaltyCards[existingIndex] = newCard;
+      } else {
+        loyaltyCards.unshift(newCard);
+      }
+
+      let savedInDb = false;
+      if (getDbStatus().isConnected) {
+        savedInDb = await dbSaveLoyaltyCard(newCard);
+      }
+
+      broadcastEvent('LOYALTY_REFRESH', loyaltyCards);
+      res.json({ success: true, card: newCard, savedInDb });
+    } catch (err: any) {
+      console.error('Error saving loyalty card:', err);
+      res.status(500).json({ error: 'Erro ao salvar cartão fidelidade: ' + (err.message || err) });
+    }
+  });
+
+  // POST stamp: add +1, -1 or set consumption
+  app.post('/api/loyalty-cards/:id/stamp', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { delta, setCount } = req.body;
+
+      let card = loyaltyCards.find(c => c.id === id);
+      if (!card && getDbStatus().isConnected) {
+        const dbCards = await dbGetLoyaltyCards();
+        if (dbCards) loyaltyCards = dbCards;
+        card = loyaltyCards.find(c => c.id === id);
+      }
+
+      if (!card) {
+        return res.status(404).json({ error: 'Cartão fidelidade não encontrado.' });
+      }
+
+      let newCount = card.consumptionCount;
+      if (typeof setCount === 'number') {
+        newCount = Math.max(0, setCount);
+      } else if (typeof delta === 'number') {
+        newCount = Math.max(0, card.consumptionCount + delta);
+      } else {
+        newCount = card.consumptionCount + 1;
+      }
+
+      card.consumptionCount = newCount;
+      card.lastPurchaseDate = new Date().toISOString();
+      card.updatedAt = new Date().toISOString();
+
+      if (getDbStatus().isConnected) {
+        await dbUpdateLoyaltyConsumption(id, newCount);
+      }
+
+      broadcastEvent('LOYALTY_REFRESH', loyaltyCards);
+      res.json({ success: true, card });
+    } catch (err: any) {
+      console.error('Error stamping loyalty card:', err);
+      res.status(500).json({ error: 'Erro ao carimbar cartão: ' + (err.message || err) });
+    }
+  });
+
+  // POST redeem reward (marcar se cliente retirou ou não o pedido grátis)
+  app.post('/api/loyalty-cards/:id/redeem', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { claimed, notes } = req.body;
+
+      let card = loyaltyCards.find(c => c.id === id);
+      if (!card && getDbStatus().isConnected) {
+        const dbCards = await dbGetLoyaltyCards();
+        if (dbCards) loyaltyCards = dbCards;
+        card = loyaltyCards.find(c => c.id === id);
+      }
+
+      if (!card) {
+        return res.status(404).json({ error: 'Cartão fidelidade não encontrado.' });
+      }
+
+      const isClaimed = claimed !== undefined ? Boolean(claimed) : true;
+      card.rewardClaimed = isClaimed;
+      card.rewardClaimedAt = isClaimed ? new Date().toISOString() : null;
+      if (notes !== undefined) card.notes = String(notes);
+      card.updatedAt = new Date().toISOString();
+
+      if (getDbStatus().isConnected) {
+        await dbSetLoyaltyRewardClaimed(id, isClaimed, notes);
+      }
+
+      broadcastEvent('LOYALTY_REFRESH', loyaltyCards);
+      res.json({ 
+        success: true, 
+        card, 
+        message: isClaimed ? 'Pedido grátis registrado como RETIRADO!' : 'Status alterado para NÃO RETIRADO (Pendente).' 
+      });
+    } catch (err: any) {
+      console.error('Error redeeming loyalty reward:', err);
+      res.status(500).json({ error: 'Erro ao registrar resgate: ' + (err.message || err) });
+    }
+  });
+
+  // POST reset card for a new 10-stamp cycle
+  app.post('/api/loyalty-cards/:id/reset', async (req, res) => {
+    try {
+      const { id } = req.params;
+      let card = loyaltyCards.find(c => c.id === id);
+      if (!card && getDbStatus().isConnected) {
+        const dbCards = await dbGetLoyaltyCards();
+        if (dbCards) loyaltyCards = dbCards;
+        card = loyaltyCards.find(c => c.id === id);
+      }
+
+      if (!card) {
+        return res.status(404).json({ error: 'Cartão fidelidade não encontrado.' });
+      }
+
+      card.consumptionCount = 0;
+      card.rewardClaimed = false;
+      card.rewardClaimedAt = null;
+      card.updatedAt = new Date().toISOString();
+
+      if (getDbStatus().isConnected) {
+        await dbSaveLoyaltyCard(card);
+      }
+
+      broadcastEvent('LOYALTY_REFRESH', loyaltyCards);
+      res.json({ success: true, card, message: 'Cartão zerado com sucesso para um novo ciclo de 10 consumos!' });
+    } catch (err: any) {
+      console.error('Error resetting loyalty card:', err);
+      res.status(500).json({ error: 'Erro ao zerar ciclo: ' + (err.message || err) });
+    }
+  });
+
+  // DELETE loyalty card
+  app.delete('/api/loyalty-cards/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      loyaltyCards = loyaltyCards.filter(c => c.id !== id);
+
+      let deletedInDb = false;
+      if (getDbStatus().isConnected) {
+        deletedInDb = await dbDeleteLoyaltyCard(id);
+      }
+
+      broadcastEvent('LOYALTY_REFRESH', loyaltyCards);
+      res.json({ success: true, deletedInDb, message: 'Cartão fidelidade excluído com sucesso.' });
+    } catch (err: any) {
+      console.error('Error deleting loyalty card:', err);
+      res.status(500).json({ error: 'Erro ao excluir cartão fidelidade: ' + (err.message || err) });
     }
   });
 

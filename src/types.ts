@@ -397,3 +397,16 @@ export interface TopProductsReportData {
   availableCategories: string[];
 }
 
+export interface LoyaltyCard {
+  id: string;
+  customerName: string;
+  phone: string;
+  consumptionCount: number; // Quantidade de consumos (0 a 10 ou mais)
+  targetCount: number; // Meta para liberar pedido grátis (padrão 10)
+  rewardClaimed: boolean; // Se o cliente retirou ou não o pedido grátis
+  rewardClaimedAt?: string | null; // Data/hora em que o pedido grátis foi retirado
+  notes?: string; // Observações adicionais (ex: 'Retirou 1 Combo Bagô Teriyaki')
+  lastPurchaseDate?: string | null; // Data do último consumo/carimbo
+  createdAt?: string;
+  updatedAt?: string;
+}

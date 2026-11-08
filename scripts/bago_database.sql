@@ -195,6 +195,26 @@ CREATE TABLE `store_settings` (
   PRIMARY KEY (`setting_key`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ------------------------------------------------------------------------------
+-- 11. LOYALTY CARDS TABLE (Cartão Fidelidade de Clientes)
+-- ------------------------------------------------------------------------------
+CREATE TABLE `loyalty_cards` (
+  `id` VARCHAR(50) NOT NULL,
+  `customer_name` VARCHAR(150) NOT NULL,
+  `phone` VARCHAR(30) NOT NULL,
+  `consumption_count` INT NOT NULL DEFAULT 0,
+  `target_count` INT NOT NULL DEFAULT 10,
+  `reward_claimed` TINYINT(1) NOT NULL DEFAULT 0,
+  `reward_claimed_at` DATETIME DEFAULT NULL,
+  `notes` TEXT DEFAULT NULL,
+  `last_purchase_date` DATETIME DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  INDEX (`phone`),
+  INDEX (`customer_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- ==============================================================================
 -- INSERÇÃO DE DADOS INICIAIS / DADOS DE SEED (RESTAURANTE BAGÔ)

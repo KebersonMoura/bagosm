@@ -1,5 +1,5 @@
 import { query, getDbStatus } from './mysql';
-import { Ingredient, Order, OrderStatus, ReadyProduct, CustomizerStep, CashRegisterSession, CashTransaction, User, PurchaseRecord, PurchaseInvoice, PurchaseInvoiceItem, DeliveryTableRow, CustomSandwich, CardMachine, PaymentSplit } from '../types';
+import { Ingredient, Order, OrderStatus, ReadyProduct, CustomizerStep, CashRegisterSession, CashTransaction, User, PurchaseRecord, PurchaseInvoice, PurchaseInvoiceItem, DeliveryTableRow, CustomSandwich, CardMachine, PaymentSplit, LoyaltyCard } from '../types';
 
 /**
  * Safely converts datetime from MySQL (which is stored in Brasília time UTC-3) into a standard ISO-8601 string with Brasília offset
@@ -207,6 +207,11 @@ export async function initDatabaseTables(): Promise<boolean> {
       } catch (e) {
         console.warn('[MySQL Repository] Notice creating card_machines table:', e);
       }
+      try {
+        await ensureLoyaltyCardsTable();
+      } catch (e) {
+        console.warn('[MySQL Repository] Notice creating loyalty_cards table:', e);
+      }
       return true;
     }
 
@@ -360,6 +365,7 @@ export async function initDatabaseTables(): Promise<boolean> {
     console.log('[MySQL Repository] Database tables successfully created!');
     await ensureDefaultUsersInDb();
     await ensureCouponsTable();
+    await ensureLoyaltyCardsTable();
     return true;
   } catch (err) {
     console.warn('[MySQL Repository] Table auto-creation notice:', err);
@@ -2609,6 +2615,162 @@ export async function dbDeleteCardMachine(id: string): Promise<boolean> {
   }
 }
 
+// ==============================================================================
+// LOYALTY CARDS (CARTÃO FIDELIDADE) REPOSITORY
+// ==============================================================================
+export async function ensureLoyaltyCardsTable(): Promise<void> {
+  const status = getDbStatus();
+  if (!status.isConnected) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS loyalty_cards (
+        id VARCHAR(50) PRIMARY KEY,
+        customer_name VARCHAR(150) NOT NULL,
+        phone VARCHAR(30) NOT NULL,
+        consumption_count INT NOT NULL DEFAULT 0,
+        target_count INT NOT NULL DEFAULT 10,
+        reward_claimed TINYINT(1) NOT NULL DEFAULT 0,
+        reward_claimed_at DATETIME NULL,
+        notes TEXT DEFAULT NULL,
+        last_purchase_date DATETIME NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX (phone),
+        INDEX (customer_name)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+  } catch (e) {
+    console.warn('[MySQL Repository] Notice creating loyalty_cards table:', e);
+  }
+}
 
+export async function dbGetLoyaltyCards(): Promise<LoyaltyCard[]> {
+  const status = getDbStatus();
+  if (!status.isConnected) return [];
+  try {
+    await ensureLoyaltyCardsTable();
+    const rows: any = await query(`
+      SELECT * FROM loyalty_cards 
+      ORDER BY updated_at DESC, created_at DESC
+    `);
+    if (Array.isArray(rows)) {
+      return rows.map((r: any) => ({
+        id: String(r.id),
+        customerName: String(r.customer_name),
+        phone: String(r.phone),
+        consumptionCount: Number(r.consumption_count) || 0,
+        targetCount: Number(r.target_count) || 10,
+        rewardClaimed: Boolean(r.reward_claimed),
+        rewardClaimedAt: r.reward_claimed_at ? parseSqlDatetimeToIso(r.reward_claimed_at) : null,
+        notes: r.notes ? String(r.notes) : undefined,
+        lastPurchaseDate: r.last_purchase_date ? parseSqlDatetimeToIso(r.last_purchase_date) : null,
+        createdAt: parseSqlDatetimeToIso(r.created_at),
+        updatedAt: r.updated_at ? parseSqlDatetimeToIso(r.updated_at) : undefined
+      }));
+    }
+    return [];
+  } catch (err) {
+    console.error('[MySQL Repository] Error getting loyalty cards:', err);
+    return [];
+  }
+}
 
+export async function dbSaveLoyaltyCard(card: LoyaltyCard): Promise<boolean> {
+  const status = getDbStatus();
+  if (!status.isConnected) return false;
+  try {
+    await ensureLoyaltyCardsTable();
+    await query(`
+      INSERT INTO loyalty_cards (
+        id, customer_name, phone, consumption_count, target_count, 
+        reward_claimed, reward_claimed_at, notes, last_purchase_date, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+      ON DUPLICATE KEY UPDATE
+        customer_name = VALUES(customer_name),
+        phone = VALUES(phone),
+        consumption_count = VALUES(consumption_count),
+        target_count = VALUES(target_count),
+        reward_claimed = VALUES(reward_claimed),
+        reward_claimed_at = VALUES(reward_claimed_at),
+        notes = VALUES(notes),
+        last_purchase_date = VALUES(last_purchase_date),
+        updated_at = NOW()
+    `, [
+      card.id,
+      card.customerName.trim(),
+      card.phone.trim(),
+      Number(card.consumptionCount) || 0,
+      Number(card.targetCount) || 10,
+      card.rewardClaimed ? 1 : 0,
+      card.rewardClaimedAt ? new Date(card.rewardClaimedAt) : null,
+      card.notes ? card.notes.trim() : null,
+      card.lastPurchaseDate ? new Date(card.lastPurchaseDate) : null
+    ]);
+    return true;
+  } catch (err) {
+    console.error('[MySQL Repository] Error saving loyalty card:', err);
+    return false;
+  }
+}
 
+export async function dbDeleteLoyaltyCard(id: string): Promise<boolean> {
+  const status = getDbStatus();
+  if (!status.isConnected) return true;
+  try {
+    await ensureLoyaltyCardsTable();
+    await query(`DELETE FROM loyalty_cards WHERE id = ?`, [id]);
+    return true;
+  } catch (err) {
+    console.error('[MySQL Repository] Error deleting loyalty card:', err);
+    return false;
+  }
+}
+
+export async function dbUpdateLoyaltyConsumption(
+  id: string, 
+  newCount: number
+): Promise<boolean> {
+  const status = getDbStatus();
+  if (!status.isConnected) return false;
+  try {
+    await ensureLoyaltyCardsTable();
+    await query(`
+      UPDATE loyalty_cards 
+      SET 
+        consumption_count = ?,
+        last_purchase_date = NOW(),
+        updated_at = NOW()
+      WHERE id = ?
+    `, [newCount, id]);
+    return true;
+  } catch (err) {
+    console.error('[MySQL Repository] Error updating loyalty consumption:', err);
+    return false;
+  }
+}
+
+export async function dbSetLoyaltyRewardClaimed(
+  id: string, 
+  claimed: boolean, 
+  notes?: string
+): Promise<boolean> {
+  const status = getDbStatus();
+  if (!status.isConnected) return false;
+  try {
+    await ensureLoyaltyCardsTable();
+    await query(`
+      UPDATE loyalty_cards 
+      SET 
+        reward_claimed = ?,
+        reward_claimed_at = ?,
+        notes = COALESCE(?, notes),
+        updated_at = NOW()
+      WHERE id = ?
+    `, [claimed ? 1 : 0, claimed ? new Date() : null, notes ? notes.trim() : null, id]);
+    return true;
+  } catch (err) {
+    console.error('[MySQL Repository] Error updating loyalty reward claim:', err);
+    return false;
+  }
+}

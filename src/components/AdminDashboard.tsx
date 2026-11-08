@@ -66,7 +66,8 @@ import {
   Flame,
   Cpu,
   Server,
-  Sparkles
+  Sparkles,
+  Award
 } from 'lucide-react';
 import { 
   APP_VERSION, 
@@ -80,6 +81,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { ClosedCashRegistersPanel } from './ClosedCashRegistersPanel';
 import { TopProductsReport } from './TopProductsReport';
+import { LoyaltyManagementPanel } from './LoyaltyManagementPanel';
 import {
   getDeliverySettings,
   saveDeliverySettings,
@@ -169,7 +171,7 @@ export default function AdminDashboard({
   onUpdateReadyProduct,
   onDeleteReadyProduct
 }: AdminDashboardProps) {
-  const [activeTab, setActiveTab] = useState<'sales' | 'top-products' | 'cash-registers' | 'inventory' | 'steps' | 'ready-products' | 'users' | 'deliveries'>('sales');
+  const [activeTab, setActiveTab] = useState<'sales' | 'top-products' | 'cash-registers' | 'inventory' | 'steps' | 'ready-products' | 'loyalty' | 'users' | 'deliveries'>('sales');
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState<ReportData | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -2086,6 +2088,18 @@ export default function AdminDashboard({
         >
           <TrendingUp className="h-4 w-4" />
           <span>Produtos Prontos</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('loyalty')}
+          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+            activeTab === 'loyalty' 
+              ? 'bg-amber-500 text-white font-black shadow-xs' 
+              : 'bg-amber-50 text-amber-900 border border-amber-200/80 hover:bg-amber-100'
+          }`}
+          id="tab-loyalty-btn"
+        >
+          <Award className="h-4 w-4 text-amber-600" />
+          <span>Cartão Fidelidade</span>
         </button>
         <button
           onClick={() => setActiveTab('deliveries')}
@@ -9123,6 +9137,11 @@ export default function AdminDashboard({
       {/* Closed Cash Registers (Caixas Fechados) Panel */}
       {activeTab === 'cash-registers' && (
         <ClosedCashRegistersPanel user={user} />
+      )}
+
+      {/* Cartão Fidelidade Panel */}
+      {activeTab === 'loyalty' && (
+        <LoyaltyManagementPanel />
       )}
 
       {/* Lançar Nota Fiscal de Compra Modal (Batch Stock Launch) */}
