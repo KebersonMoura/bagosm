@@ -17,6 +17,7 @@ export interface StoreDeliverySettings {
   isFreeDeliveryAll?: boolean; // Deixar delivery grátis ou não para todos os pedidos
   deliveryOpeningTime: string; // Ex: "18:00"
   deliveryClosingTime: string; // Ex: "23:30"
+  deliveryOpenDays?: number[]; // Dias da semana abertos: 0=Dom, 1=Seg, 2=Ter, 3=Qua, 4=Qui, 5=Sex, 6=Sáb
   isDeliveryBlocked?: boolean; // Bloqueio manual de recebimento de pedidos
   deliveryBlockedReason?: string; // Motivo do bloqueio manual (opcional)
   forceAlwaysOpen?: boolean; // Liberar delivery a qualquer momento (ignorar horário de funcionamento)
@@ -48,6 +49,7 @@ export const DEFAULT_DELIVERY_SETTINGS: StoreDeliverySettings = {
   isFreeDeliveryAll: false,
   deliveryOpeningTime: '15:00',
   deliveryClosingTime: '23:00',
+  deliveryOpenDays: [0, 1, 2, 3, 4, 5, 6],
   isDeliveryBlocked: false,
   deliveryBlockedReason: '',
   forceAlwaysOpen: false,
@@ -64,6 +66,41 @@ export const DEFAULT_DELIVERY_SETTINGS: StoreDeliverySettings = {
 
 const STORAGE_KEY = 'bago_delivery_settings';
 
+export const DELIVERY_WEEKDAYS: { day: number; short: string; label: string }[] = [
+  { day: 0, short: 'Dom', label: 'Domingo' },
+  { day: 1, short: 'Seg', label: 'Segunda-feira' },
+  { day: 2, short: 'Ter', label: 'Terça-feira' },
+  { day: 3, short: 'Qua', label: 'Quarta-feira' },
+  { day: 4, short: 'Qui', label: 'Quinta-feira' },
+  { day: 5, short: 'Sex', label: 'Sexta-feira' },
+  { day: 6, short: 'Sáb', label: 'Sábado' }
+];
+
+export function normalizeDeliveryOpenDays(days: unknown): number[] {
+  if (!Array.isArray(days)) return [0, 1, 2, 3, 4, 5, 6];
+  const valid = Array.from(
+    new Set(
+      days
+        .map(d => Number(d))
+        .filter(d => Number.isInteger(d) && d >= 0 && d <= 6)
+    )
+  ).sort((a, b) => a - b);
+  return valid;
+}
+
+export function formatDeliveryOpenDays(days?: number[]): string {
+  const normalized = normalizeDeliveryOpenDays(days);
+  if (normalized.length === 0) return 'Nenhum dia selecionado';
+  if (normalized.length === 7) return 'Todos os dias';
+  // Order starting from Monday to Sunday for natural reading in Portuguese
+  const ptOrder = [1, 2, 3, 4, 5, 6, 0];
+  const ordered = ptOrder.filter(d => normalized.includes(d));
+  return ordered
+    .map(d => DELIVERY_WEEKDAYS.find(w => w.day === d)?.short || '')
+    .filter(Boolean)
+    .join(', ');
+}
+
 export function getDeliverySettings(): StoreDeliverySettings {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -72,6 +109,9 @@ export function getDeliverySettings(): StoreDeliverySettings {
     return {
       ...DEFAULT_DELIVERY_SETTINGS,
       ...parsed,
+      deliveryOpenDays: Array.isArray(parsed.deliveryOpenDays)
+        ? normalizeDeliveryOpenDays(parsed.deliveryOpenDays)
+        : DEFAULT_DELIVERY_SETTINGS.deliveryOpenDays,
       tiers: Array.isArray(parsed.tiers) && parsed.tiers.length > 0 ? parsed.tiers : DEFAULT_DELIVERY_SETTINGS.tiers
     };
   } catch (err) {
@@ -89,6 +129,9 @@ export async function fetchDeliverySettingsFromApi(): Promise<StoreDeliverySetti
         const merged = {
           ...DEFAULT_DELIVERY_SETTINGS,
           ...data,
+          deliveryOpenDays: Array.isArray(data.deliveryOpenDays)
+            ? normalizeDeliveryOpenDays(data.deliveryOpenDays)
+            : DEFAULT_DELIVERY_SETTINGS.deliveryOpenDays,
           tiers: Array.isArray(data.tiers) && data.tiers.length > 0 ? data.tiers : DEFAULT_DELIVERY_SETTINGS.tiers
         };
         localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
@@ -257,6 +300,50 @@ export interface DeliveryOpeningStatus {
   reason?: string;
   isManualBlock: boolean;
   isScheduleBlock: boolean;
+  isDayClosed?: boolean;
+  closedDayLabel?: string;
+}
+
+function getBrasiliaDateParts(): { hours: number; minutes: number; weekday: number } {
+  const now = new Date();
+  let hours = now.getHours();
+  let minutes = now.getMinutes();
+  let weekday = now.getDay();
+
+  try {
+    const timeStr = now.toLocaleTimeString('pt-BR', {
+      timeZone: 'America/Sao_Paulo',
+      hour12: false,
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    const [h, m] = timeStr.split(':').map(Number);
+    if (!isNaN(h) && !isNaN(m)) {
+      hours = h === 24 ? 0 : h;
+      minutes = m;
+    }
+
+    const weekdayShort = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Sao_Paulo',
+      weekday: 'short'
+    }).format(now);
+    const weekdayMap: Record<string, number> = {
+      Sun: 0,
+      Mon: 1,
+      Tue: 2,
+      Wed: 3,
+      Thu: 4,
+      Fri: 5,
+      Sat: 6
+    };
+    if (weekdayMap[weekdayShort] !== undefined) {
+      weekday = weekdayMap[weekdayShort];
+    }
+  } catch {
+    // Fallback to local Date parts
+  }
+
+  return { hours, minutes, weekday };
 }
 
 export function checkDeliveryOpeningStatus(settings: StoreDeliverySettings = getDeliverySettings()): DeliveryOpeningStatus {
@@ -270,7 +357,7 @@ export function checkDeliveryOpeningStatus(settings: StoreDeliverySettings = get
     };
   }
 
-  // 2. Liberar Delivery a Qualquer Momento (Ignorar Horário de Funcionamento)
+  // 2. Liberar Delivery a Qualquer Momento (Ignorar Horário e Dias de Funcionamento)
   if (settings.forceAlwaysOpen) {
     return {
       isBlocked: false,
@@ -279,38 +366,31 @@ export function checkDeliveryOpeningStatus(settings: StoreDeliverySettings = get
     };
   }
 
-  // 3. Schedule check (opening & closing times)
+  // 3. Weekday & Schedule check (America/Sao_Paulo)
+  const openDays = normalizeDeliveryOpenDays(settings.deliveryOpenDays);
   const opening = settings.deliveryOpeningTime?.trim();
   const closing = settings.deliveryClosingTime?.trim();
+  const { hours: currentHours, minutes: currentMinutes, weekday: currentWeekday } = getBrasiliaDateParts();
+  const currentTotalMin = currentHours * 60 + currentMinutes;
+  const todayInfo = DELIVERY_WEEKDAYS.find(w => w.day === currentWeekday);
+  const todayLabel = todayInfo?.label || 'hoje';
+
+  if (openDays.length === 0) {
+    return {
+      isBlocked: true,
+      reason: 'Estabelecimento fechado! Nenhum dia da semana está habilitado para delivery no momento.',
+      isManualBlock: false,
+      isScheduleBlock: true,
+      isDayClosed: true,
+      closedDayLabel: todayLabel
+    };
+  }
+
+  const timeRangeStr = opening
+    ? (closing ? `das ${opening} às ${closing}` : `a partir das ${opening}`)
+    : '';
 
   if (opening) {
-    let currentHours: number;
-    let currentMinutes: number;
-
-    try {
-      const timeStr = new Date().toLocaleTimeString('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        hour12: false,
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      const [h, m] = timeStr.split(':').map(Number);
-      if (!isNaN(h) && !isNaN(m)) {
-        currentHours = h;
-        currentMinutes = m;
-      } else {
-        const now = new Date();
-        currentHours = now.getHours();
-        currentMinutes = now.getMinutes();
-      }
-    } catch (e) {
-      const now = new Date();
-      currentHours = now.getHours();
-      currentMinutes = now.getMinutes();
-    }
-
-    const currentTotalMin = currentHours * 60 + currentMinutes;
-
     const [openH, openM] = opening.split(':').map(Number);
     const openTotalMin = (isNaN(openH) ? 15 : openH) * 60 + (isNaN(openM) ? 0 : openM);
 
@@ -320,17 +400,34 @@ export function checkDeliveryOpeningStatus(settings: StoreDeliverySettings = get
       closeTotalMin = (isNaN(closeH) ? 23 : closeH) * 60 + (isNaN(closeM) ? 0 : closeM);
     }
 
-    let isWithinSchedule = false;
-    if (closeTotalMin >= openTotalMin) {
-      // Standard schedule within same day (e.g. 18:00 to 23:30)
-      isWithinSchedule = currentTotalMin >= openTotalMin && currentTotalMin <= closeTotalMin;
-    } else {
-      // Overnight schedule (e.g. 18:00 to 02:00)
-      isWithinSchedule = currentTotalMin >= openTotalMin || currentTotalMin <= closeTotalMin;
-    }
+    const isOvernight = closeTotalMin < openTotalMin;
 
-    if (!isWithinSchedule) {
-      const timeRangeStr = closing ? `das ${opening} às ${closing}` : `a partir das ${opening}`;
+    if (isOvernight) {
+      // Overnight shift (e.g. 18:00 to 02:00)
+      const yesterdayWeekday = (currentWeekday + 6) % 7;
+      if (currentTotalMin <= closeTotalMin) {
+        // Post-midnight tail belongs to yesterday's shift
+        if (openDays.includes(yesterdayWeekday)) {
+          return { isBlocked: false, isManualBlock: false, isScheduleBlock: false };
+        }
+      } else if (currentTotalMin >= openTotalMin) {
+        if (openDays.includes(currentWeekday)) {
+          return { isBlocked: false, isManualBlock: false, isScheduleBlock: false };
+        }
+      }
+
+      if (!openDays.includes(currentWeekday)) {
+        const daysSummary = formatDeliveryOpenDays(openDays);
+        return {
+          isBlocked: true,
+          reason: `Estabelecimento fechado hoje (${todayLabel})! Funcionamos nos dias: ${daysSummary} (${timeRangeStr}).`,
+          isManualBlock: false,
+          isScheduleBlock: true,
+          isDayClosed: true,
+          closedDayLabel: todayLabel
+        };
+      }
+
       return {
         isBlocked: true,
         reason: `Estabelecimento fechado! Nosso horário de atendimento para pedidos (entrega e retirada) é ${timeRangeStr}.`,
@@ -338,6 +435,39 @@ export function checkDeliveryOpeningStatus(settings: StoreDeliverySettings = get
         isScheduleBlock: true
       };
     }
+
+    // Standard same-day schedule (e.g. 15:00 to 23:00)
+    if (!openDays.includes(currentWeekday)) {
+      const daysSummary = formatDeliveryOpenDays(openDays);
+      return {
+        isBlocked: true,
+        reason: `Estabelecimento fechado hoje (${todayLabel})! Funcionamos nos dias: ${daysSummary} (${timeRangeStr}).`,
+        isManualBlock: false,
+        isScheduleBlock: true,
+        isDayClosed: true,
+        closedDayLabel: todayLabel
+      };
+    }
+
+    const isWithinSchedule = currentTotalMin >= openTotalMin && currentTotalMin <= closeTotalMin;
+    if (!isWithinSchedule) {
+      return {
+        isBlocked: true,
+        reason: `Estabelecimento fechado! Nosso horário de atendimento para pedidos (entrega e retirada) é ${timeRangeStr}.`,
+        isManualBlock: false,
+        isScheduleBlock: true
+      };
+    }
+  } else if (!openDays.includes(currentWeekday)) {
+    const daysSummary = formatDeliveryOpenDays(openDays);
+    return {
+      isBlocked: true,
+      reason: `Estabelecimento fechado hoje (${todayLabel})! Funcionamos nos dias: ${daysSummary}.`,
+      isManualBlock: false,
+      isScheduleBlock: true,
+      isDayClosed: true,
+      closedDayLabel: todayLabel
+    };
   }
 
   return {

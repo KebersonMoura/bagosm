@@ -67,7 +67,8 @@ import {
   Cpu,
   Server,
   Sparkles,
-  Award
+  Award,
+  Upload
 } from 'lucide-react';
 import { 
   APP_VERSION, 
@@ -82,13 +83,18 @@ import autoTable from 'jspdf-autotable';
 import { ClosedCashRegistersPanel } from './ClosedCashRegistersPanel';
 import { TopProductsReport } from './TopProductsReport';
 import { LoyaltyManagementPanel } from './LoyaltyManagementPanel';
+import { sanitizeImageUrl } from '../utils/imageUrl';
+import { uploadImageFromComputer } from '../utils/imageUpload';
 import {
   getDeliverySettings,
   saveDeliverySettings,
   fetchDeliverySettingsFromApi,
   saveDeliverySettingsToDb,
   StoreDeliverySettings,
-  DeliveryFeeTier
+  DeliveryFeeTier,
+  DELIVERY_WEEKDAYS,
+  formatDeliveryOpenDays,
+  normalizeDeliveryOpenDays
 } from '../utils/deliverySettings';
 import { 
   ResponsiveContainer, 
@@ -209,7 +215,7 @@ export default function AdminDashboard({
 
   // Store Logo Modal State
   const [isLogoModalOpen, setIsLogoModalOpen] = useState(false);
-  const [storeLogoInput, setStoreLogoInput] = useState(() => localStorage.getItem('bago_store_logo') || '');
+  const [storeLogoInput, setStoreLogoInput] = useState(() => sanitizeImageUrl(localStorage.getItem('bago_store_logo') || ''));
 
   // System Config Sub-tabs & Delivery Fee State
   const [settingsSubTab, setSettingsSubTab] = useState<'users' | 'delivery' | 'schedule' | 'whatsapp' | 'coupons' | 'card-machines' | 'info' | 'system'>('users');
@@ -718,8 +724,9 @@ export default function AdminDashboard({
       .then(res => res.json())
       .then(data => {
         if (data && typeof data.logoUrl === 'string') {
-          setStoreLogoInput(data.logoUrl);
-          localStorage.setItem('bago_store_logo', data.logoUrl);
+          const clean = sanitizeImageUrl(data.logoUrl);
+          setStoreLogoInput(clean);
+          localStorage.setItem('bago_store_logo', clean);
           window.dispatchEvent(new Event('store_logo_updated'));
         }
       })
@@ -1038,6 +1045,26 @@ export default function AdminDashboard({
   const [customCategoryInput, setCustomCategoryInput] = useState('');
   const [photoModalReadyProduct, setPhotoModalReadyProduct] = useState<ReadyProduct | null>(null);
   const [readyProductPhotoUrlInput, setReadyProductPhotoUrlInput] = useState<string>('');
+  const [uploadingImageTarget, setUploadingImageTarget] = useState<'ingredient-edit' | 'ingredient-quick' | 'product-edit' | 'product-quick' | null>(null);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+
+  const handleComputerImageUpload = async (
+    file: File | undefined,
+    target: 'ingredient-edit' | 'ingredient-quick' | 'product-edit' | 'product-quick',
+    onSuccess: (url: string) => void
+  ) => {
+    if (!file) return;
+    setImageUploadError(null);
+    setUploadingImageTarget(target);
+    try {
+      const uploadedUrl = await uploadImageFromComputer(file, user.role);
+      onSuccess(uploadedUrl);
+    } catch (err: any) {
+      setImageUploadError(err?.message || 'Erro ao enviar imagem do computador.');
+    } finally {
+      setUploadingImageTarget(null);
+    }
+  };
 
   // States for Combo management
   const [comboItemSearch, setComboItemSearch] = useState<string>('');
@@ -3451,14 +3478,33 @@ export default function AdminDashboard({
                     )}
                   </div>
 
-                  {/* Photo URL & Presets Field */}
+                  {/* Photo URL, Computer Upload & Presets Field */}
                   <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-wrap justify-between items-center gap-2">
                       <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
                         <Camera className="h-4 w-4 text-amber-500" />
                         <span>Foto do Produto / Insumo</span>
                       </label>
-                      <span className="text-[11px] text-slate-500 font-medium">Link de Imagem (URL)</span>
+                      <label className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-extrabold border transition-all cursor-pointer ${
+                        uploadingImageTarget === 'ingredient-edit'
+                          ? 'bg-slate-200 text-slate-500 border-slate-300 pointer-events-none'
+                          : 'bg-brand-green hover:bg-brand-green-dark text-white border-brand-green shadow-2xs active:scale-95'
+                      }`}>
+                        <Upload className="h-3.5 w-3.5" />
+                        <span>{uploadingImageTarget === 'ingredient-edit' ? 'Enviando...' : 'Enviar do Computador'}</span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="hidden"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            handleComputerImageUpload(file, 'ingredient-edit', (url) => {
+                              setEditingIngredient(prev => ({ ...prev, image: url }));
+                            });
+                          }}
+                        />
+                      </label>
                     </div>
 
                     <div className="flex gap-2.5 items-center">
@@ -3469,14 +3515,28 @@ export default function AdminDashboard({
                           <ImageIcon className="h-6 w-6 text-slate-300" />
                         )}
                       </div>
-                      <input
-                        type="text"
-                        placeholder="https://images.unsplash.com/photo-..."
-                        value={editingIngredient.image || ''}
-                        onChange={(e) => setEditingIngredient(prev => ({ ...prev, image: e.target.value }))}
-                        className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium bg-white focus:outline-hidden focus:ring-2 focus:ring-brand-green"
-                      />
+                      <div className="flex-1 space-y-1">
+                        <input
+                          type="text"
+                          placeholder="Ou cole o link da imagem (URL): https://..."
+                          value={editingIngredient.image || ''}
+                          onChange={(e) => {
+                            setImageUploadError(null);
+                            setEditingIngredient(prev => ({ ...prev, image: e.target.value }));
+                          }}
+                          className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-medium bg-white focus:outline-hidden focus:ring-2 focus:ring-brand-green"
+                        />
+                        <p className="text-[10px] text-slate-400 font-medium">
+                          Envie uma foto do computador (JPG, PNG, WEBP, GIF) ou informe um link (URL).
+                        </p>
+                      </div>
                     </div>
+
+                    {imageUploadError && (
+                      <div className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg">
+                        {imageUploadError}
+                      </div>
+                    )}
 
                     {/* Category Photo Suggestions */}
                     {editingIngredient.category && photoSuggestionsByCategory[editingIngredient.category] && (
@@ -4015,17 +4075,42 @@ export default function AdminDashboard({
                   )}
                 </div>
 
-                {/* URL Input */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Link da Imagem (URL da Foto)
-                  </label>
+                {/* Computer Upload + URL Input */}
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Link da Imagem (URL) ou Upload do Computador
+                    </label>
+                    <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                      uploadingImageTarget === 'ingredient-quick'
+                        ? 'bg-slate-200 text-slate-500 pointer-events-none'
+                        : 'bg-brand-green hover:bg-brand-green-dark text-white shadow-xs active:scale-95'
+                    }`}>
+                      <Upload className="h-3.5 w-3.5" />
+                      <span>{uploadingImageTarget === 'ingredient-quick' ? 'Enviando...' : 'Enviar do Computador'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          handleComputerImageUpload(file, 'ingredient-quick', (url) => {
+                            setIngredientPhotoUrlInput(url);
+                          });
+                        }}
+                      />
+                    </label>
+                  </div>
                   <div className="flex gap-2">
                     <input
-                      type="url"
+                      type="text"
                       placeholder="https://exemplo.com/foto.jpg..."
                       value={ingredientPhotoUrlInput}
-                      onChange={(e) => setIngredientPhotoUrlInput(e.target.value)}
+                      onChange={(e) => {
+                        setImageUploadError(null);
+                        setIngredientPhotoUrlInput(e.target.value);
+                      }}
                       className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-brand-green"
                     />
                     {ingredientPhotoUrlInput && (
@@ -4038,6 +4123,11 @@ export default function AdminDashboard({
                       </button>
                     )}
                   </div>
+                  {imageUploadError && (
+                    <div className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg">
+                      {imageUploadError}
+                    </div>
+                  )}
                 </div>
 
                 {/* Photo Gallery Suggestions */}
@@ -4673,15 +4763,67 @@ export default function AdminDashboard({
                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs"
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <label>Link da Imagem (URL)</label>
-                  <input
-                    type="text"
-                    value={editingProduct.image || ''}
-                    onChange={(e) => setEditingProduct(prev => ({ ...prev, image: e.target.value }))}
-                    placeholder="Ex: https://..."
-                    className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-xs"
-                  />
+                <div className="space-y-2 md:col-span-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="font-bold text-slate-700 flex items-center gap-1.5">
+                      <Camera className="h-4 w-4 text-amber-500" />
+                      <span>Imagem do Produto (Computador ou URL)</span>
+                    </label>
+                    <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer ${
+                      uploadingImageTarget === 'product-edit'
+                        ? 'bg-slate-200 text-slate-500 pointer-events-none'
+                        : 'bg-brand-green hover:bg-brand-green-dark text-white shadow-2xs active:scale-95'
+                    }`}>
+                      <Upload className="h-3.5 w-3.5" />
+                      <span>{uploadingImageTarget === 'product-edit' ? 'Enviando...' : 'Enviar do Computador'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          handleComputerImageUpload(file, 'product-edit', (url) => {
+                            setEditingProduct(prev => ({ ...prev, image: url }));
+                          });
+                        }}
+                      />
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-14 h-14 rounded-xl border border-slate-200 overflow-hidden bg-white shrink-0 flex items-center justify-center shadow-2xs">
+                      {editingProduct.image ? (
+                        <img
+                          src={editingProduct.image}
+                          alt="Preview"
+                          referrerPolicy="no-referrer"
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <ImageIcon className="h-6 w-6 text-slate-300" />
+                      )}
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <input
+                        type="text"
+                        value={editingProduct.image || ''}
+                        onChange={(e) => {
+                          setImageUploadError(null);
+                          setEditingProduct(prev => ({ ...prev, image: e.target.value }));
+                        }}
+                        placeholder="Ou cole o link da imagem (URL): Ex: https://..."
+                        className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-hidden focus:ring-2 focus:ring-brand-green"
+                      />
+                      <p className="text-[10px] text-slate-400 font-medium">
+                        Você pode enviar uma foto do seu computador (JPG, PNG, WEBP, GIF) ou manter um link (URL).
+                      </p>
+                    </div>
+                  </div>
+                  {imageUploadError && (
+                    <div className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg">
+                      {imageUploadError}
+                    </div>
+                  )}
                 </div>
 
                 {/* Category Selection with Custom Category Creation Option */}
@@ -5863,17 +6005,42 @@ export default function AdminDashboard({
                   )}
                 </div>
 
-                {/* URL Input */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Link da Imagem (URL da Foto)
-                  </label>
+                {/* Computer Upload + URL Input */}
+                <div className="space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Link da Imagem (URL) ou Upload do Computador
+                    </label>
+                    <label className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                      uploadingImageTarget === 'product-quick'
+                        ? 'bg-slate-200 text-slate-500 pointer-events-none'
+                        : 'bg-brand-green hover:bg-brand-green-dark text-white shadow-xs active:scale-95'
+                    }`}>
+                      <Upload className="h-3.5 w-3.5" />
+                      <span>{uploadingImageTarget === 'product-quick' ? 'Enviando...' : 'Enviar do Computador'}</span>
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          handleComputerImageUpload(file, 'product-quick', (url) => {
+                            setReadyProductPhotoUrlInput(url);
+                          });
+                        }}
+                      />
+                    </label>
+                  </div>
                   <div className="flex gap-2">
                     <input
-                      type="url"
+                      type="text"
                       placeholder="https://exemplo.com/foto.jpg..."
                       value={readyProductPhotoUrlInput}
-                      onChange={(e) => setReadyProductPhotoUrlInput(e.target.value)}
+                      onChange={(e) => {
+                        setImageUploadError(null);
+                        setReadyProductPhotoUrlInput(e.target.value);
+                      }}
                       className="flex-1 px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs font-medium focus:outline-hidden focus:ring-2 focus:ring-brand-green"
                     />
                     {readyProductPhotoUrlInput && (
@@ -5886,6 +6053,11 @@ export default function AdminDashboard({
                       </button>
                     )}
                   </div>
+                  {imageUploadError && (
+                    <div className="text-[11px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-lg">
+                      {imageUploadError}
+                    </div>
+                  )}
                 </div>
 
                 {/* Photo Gallery Suggestions */}
@@ -6691,7 +6863,7 @@ export default function AdminDashboard({
                           ? 'Modo Somente Retirada ativo! Clientes podem fazer pedidos exclusivamente para retirada no balcão da loja. O serviço de entrega via delivery está bloqueado e a página inicial exibe o aviso "Somente Retirada".'
                           : deliveryConfig.forceAlwaysOpen
                           ? 'Delivery Liberado a qualquer momento! A loja está aberta para receber pedidos 24 horas por dia, ignorando horários de abertura e fechamento.'
-                          : `Loja ativa! Pedidos são aceitos e validados conforme o horário programado (${deliveryConfig.deliveryOpeningTime || '15:00'} às ${deliveryConfig.deliveryClosingTime || '23:00'}).`}
+                          : `Loja ativa! Pedidos são aceitos nos dias: ${formatDeliveryOpenDays(deliveryConfig.deliveryOpenDays)} (${deliveryConfig.deliveryOpeningTime || '15:00'} às ${deliveryConfig.deliveryClosingTime || '23:00'}).`}
                       </p>
                     </div>
                   </div>
@@ -6901,6 +7073,100 @@ export default function AdminDashboard({
                   </div>
                 </div>
 
+                {/* Dias da Semana que o Delivery está Aberto */}
+                <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-200/70 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-blue-600 text-white rounded-xl shadow-2xs shrink-0">
+                        <Calendar className="h-4 w-4" />
+                      </div>
+                      <div>
+                        <label className="text-xs font-black text-slate-800 uppercase tracking-tight block">
+                          Dias da Semana em que o Delivery está Aberto
+                        </label>
+                        <p className="text-[11px] text-slate-600 font-medium">
+                          Selecione os dias de funcionamento. Nos dias desmarcados, o sistema informa automaticamente que a loja está fechada.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryConfig(prev => ({ ...prev, deliveryOpenDays: [0, 1, 2, 3, 4, 5, 6] }))}
+                        className="px-2.5 py-1 bg-white hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg text-[10px] font-extrabold cursor-pointer transition-colors"
+                      >
+                        Todos os dias
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryConfig(prev => ({ ...prev, deliveryOpenDays: [1, 2, 3, 4, 5, 6] }))}
+                        className="px-2.5 py-1 bg-white hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg text-[10px] font-extrabold cursor-pointer transition-colors"
+                      >
+                        Seg a Sáb
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setDeliveryConfig(prev => ({ ...prev, deliveryOpenDays: [0, 2, 3, 4, 5, 6] }))}
+                        className="px-2.5 py-1 bg-white hover:bg-blue-100 text-blue-800 border border-blue-200 rounded-lg text-[10px] font-extrabold cursor-pointer transition-colors"
+                      >
+                        Ter a Dom
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                    {DELIVERY_WEEKDAYS.map((wd) => {
+                      const currentDays = normalizeDeliveryOpenDays(deliveryConfig.deliveryOpenDays);
+                      const isOpen = currentDays.includes(wd.day);
+                      return (
+                        <button
+                          key={wd.day}
+                          type="button"
+                          onClick={() => {
+                            setDeliveryConfig(prev => {
+                              const prevDays = normalizeDeliveryOpenDays(prev.deliveryOpenDays);
+                              const nextDays = prevDays.includes(wd.day)
+                                ? prevDays.filter(d => d !== wd.day)
+                                : [...prevDays, wd.day].sort((a, b) => a - b);
+                              return { ...prev, deliveryOpenDays: nextDays };
+                            });
+                          }}
+                          className={`p-2.5 rounded-xl border-2 text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                            isOpen
+                              ? 'bg-emerald-50 border-emerald-500 text-emerald-950 shadow-2xs'
+                              : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-black uppercase tracking-tight">{wd.short}</span>
+                            <span className={`w-4 h-4 rounded-full flex items-center justify-center ${
+                              isOpen ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-400'
+                            }`}>
+                              {isOpen ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-bold truncate opacity-80">{wd.label}</p>
+                            <span className={`inline-block mt-1 text-[9px] font-black uppercase px-1.5 py-0.5 rounded-md ${
+                              isOpen ? 'bg-emerald-600 text-white' : 'bg-rose-100 text-rose-700'
+                            }`}>
+                              {isOpen ? 'Aberto' : 'Fechado'}
+                            </span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] font-bold text-slate-700 bg-white/90 px-3 py-2 rounded-xl border border-blue-100">
+                    <span>Resumo dos dias abertos:</span>
+                    <span className="text-blue-800 font-black">
+                      {formatDeliveryOpenDays(deliveryConfig.deliveryOpenDays)}
+                    </span>
+                  </div>
+                </div>
+
                 {/* Input Fields for Opening/Closing Times */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 items-end pt-2">
                   <div className="space-y-1">
@@ -6941,12 +7207,16 @@ export default function AdminDashboard({
                         setSavingDeliverySettings(true);
                         setDeliverySaveSuccess(null);
                         try {
-                          const result = await saveDeliverySettingsToDb(deliveryConfig);
+                          const configToSave = {
+                            ...deliveryConfig,
+                            deliveryOpenDays: normalizeDeliveryOpenDays(deliveryConfig.deliveryOpenDays)
+                          };
+                          const result = await saveDeliverySettingsToDb(configToSave);
                           if (result.success) {
-                            setDeliverySaveSuccess(`Horários (${deliveryConfig.deliveryOpeningTime || '15:00'} às ${deliveryConfig.deliveryClosingTime || '23:00'}) e configurações de Somente Retirada salvos no banco de dados com sucesso!`);
+                            setDeliverySaveSuccess(`Dias (${formatDeliveryOpenDays(configToSave.deliveryOpenDays)}), horários (${configToSave.deliveryOpeningTime || '15:00'} às ${configToSave.deliveryClosingTime || '23:00'}) e configurações salvos no banco de dados com sucesso!`);
                           } else {
-                            saveDeliverySettings(deliveryConfig);
-                            setDeliverySaveSuccess('Horários e configurações atualizados!');
+                            saveDeliverySettings(configToSave);
+                            setDeliverySaveSuccess('Dias, horários e configurações atualizados!');
                           }
                         } catch (err) {
                           saveDeliverySettings(deliveryConfig);
@@ -6963,7 +7233,7 @@ export default function AdminDashboard({
                       ) : (
                         <RefreshCw className="h-4 w-4" />
                       )}
-                      <span>{savingDeliverySettings ? 'Salvando...' : 'Salvar Horários e Mensagem no Banco'}</span>
+                      <span>{savingDeliverySettings ? 'Salvando...' : 'Salvar Dias, Horários e Mensagem'}</span>
                     </button>
                   </div>
                 </div>
@@ -10032,7 +10302,7 @@ export default function AdminDashboard({
                 <button
                   type="button"
                   onClick={async () => {
-                    const finalLogo = storeLogoInput.trim();
+                    const finalLogo = sanitizeImageUrl(storeLogoInput.trim());
                     localStorage.setItem('bago_store_logo', finalLogo);
                     window.dispatchEvent(new Event('store_logo_updated'));
                     try {

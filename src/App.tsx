@@ -19,6 +19,7 @@ import AdminDashboard from './components/AdminDashboard';
 import PosDashboard from './components/PosDashboard';
 import LoginModal from './components/LoginModal';
 import { Ingredient, Order, OrderStatus, User, CustomizerStep, ReadyProduct } from './types';
+import { sanitizeImageUrl } from './utils/imageUrl';
 
 interface Toast {
   id: string;
@@ -40,12 +41,22 @@ export default function App() {
   const [isFullWidth, setIsFullWidth] = useState(false);
   const [isNativeFullScreen, setIsNativeFullScreen] = useState(false);
   const [storeLogoUrl, setStoreLogoUrl] = useState<string>(() => {
-    return localStorage.getItem('bago_store_logo') || '';
+    const cached = localStorage.getItem('bago_store_logo') || '';
+    const clean = sanitizeImageUrl(cached);
+    if (clean !== cached) {
+      localStorage.setItem('bago_store_logo', clean);
+    }
+    return clean;
   });
 
   useEffect(() => {
     const handleLogoUpdate = () => {
-      setStoreLogoUrl(localStorage.getItem('bago_store_logo') || '');
+      const cached = localStorage.getItem('bago_store_logo') || '';
+      const clean = sanitizeImageUrl(cached);
+      if (clean !== cached) {
+        localStorage.setItem('bago_store_logo', clean);
+      }
+      setStoreLogoUrl(clean);
     };
     window.addEventListener('store_logo_updated', handleLogoUpdate);
     window.addEventListener('storage', handleLogoUpdate);
@@ -230,8 +241,9 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (typeof data?.logoUrl === 'string') {
-          setStoreLogoUrl(data.logoUrl);
-          localStorage.setItem('bago_store_logo', data.logoUrl);
+          const cleanLogo = sanitizeImageUrl(data.logoUrl);
+          setStoreLogoUrl(cleanLogo);
+          localStorage.setItem('bago_store_logo', cleanLogo);
         }
       }
     } catch (err) {
@@ -301,7 +313,7 @@ export default function App() {
             } else if (parsed.type === 'READY_PRODUCTS_REFRESH') {
               setReadyProducts(parsed.data);
             } else if (parsed.type === 'STORE_LOGO_UPDATED') {
-              const newLogo = parsed.data?.logoUrl || '';
+              const newLogo = sanitizeImageUrl(parsed.data?.logoUrl || '');
               setStoreLogoUrl(newLogo);
               localStorage.setItem('bago_store_logo', newLogo);
             }

@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import crypto from 'crypto';
 import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
@@ -49,9 +50,11 @@ import {
   dbSaveLoyaltyCard,
   dbDeleteLoyaltyCard,
   dbUpdateLoyaltyConsumption,
-  dbSetLoyaltyRewardClaimed
+  dbSetLoyaltyRewardClaimed,
+  dbSaveUploadedImage,
+  dbGetUploadedImage
 } from './src/db/repository';
-import { DEFAULT_DELIVERY_SETTINGS, StoreDeliverySettings, checkDeliveryOpeningStatus } from './src/utils/deliverySettings';
+import { DEFAULT_DELIVERY_SETTINGS, StoreDeliverySettings, checkDeliveryOpeningStatus, normalizeDeliveryOpenDays } from './src/utils/deliverySettings';
 
 // Default In-Memory Users Fallback
 let systemUsers: User[] = [
@@ -98,10 +101,10 @@ let storeInfo: StoreInfo = {
       }
       const dbLogo = await dbGetStoreSettings('store_logo');
       if (dbLogo && typeof dbLogo === 'object' && typeof dbLogo.logoUrl === 'string') {
-        storeLogoUrl = dbLogo.logoUrl;
+        storeLogoUrl = dbLogo.logoUrl.replace(/jaws\.app\.br/gi, 'b3.seg.br');
         console.log('[Server] Loaded store logo from MySQL database:', storeLogoUrl);
       } else if (typeof dbLogo === 'string') {
-        storeLogoUrl = dbLogo;
+        storeLogoUrl = dbLogo.replace(/jaws\.app\.br/gi, 'b3.seg.br');
       }
       const dbInfo = await dbGetStoreInfo();
       if (dbInfo) {
@@ -631,7 +634,122 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
+
+  // Bounded in-memory cache for uploaded images (backed by MySQL uploaded_images table)
+  const uploadedImagesCache = new Map<string, { mimeType: string; buffer: Buffer }>();
+  const MAX_IMAGE_CACHE_ITEMS = 150;
+  const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // 4 MB decoded
+
+  function verifyImageMagicBytes(mimeType: string, buf: Buffer): boolean {
+    if (buf.length < 12) return false;
+    if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+      return buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+    }
+    if (mimeType === 'image/png') {
+      return buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+    }
+    if (mimeType === 'image/gif') {
+      const header = buf.subarray(0, 6).toString('ascii');
+      return header === 'GIF87a' || header === 'GIF89a';
+    }
+    if (mimeType === 'image/webp') {
+      return buf.subarray(0, 4).toString('ascii') === 'RIFF' && buf.subarray(8, 12).toString('ascii') === 'WEBP';
+    }
+    return false;
+  }
+
+  function cacheUploadedImage(id: string, mimeType: string, buffer: Buffer) {
+    if (uploadedImagesCache.size >= MAX_IMAGE_CACHE_ITEMS) {
+      const oldestKey = uploadedImagesCache.keys().next().value;
+      if (oldestKey) uploadedImagesCache.delete(oldestKey);
+    }
+    uploadedImagesCache.set(id, { mimeType, buffer });
+  }
+
+  // POST Upload image from computer (Admin only, persisted in MySQL)
+  app.post('/api/upload-image', async (req, res) => {
+    try {
+      const { imageData, fileName, role } = req.body || {};
+      if (role !== 'admin') {
+        return res.status(403).json({ error: 'Não autorizado.' });
+      }
+      if (typeof imageData !== 'string') {
+        return res.status(400).json({ error: 'Dados da imagem inválidos.' });
+      }
+
+      const match = imageData.match(/^data:(image\/(?:jpeg|jpg|png|webp|gif));base64,([A-Za-z0-9+/=\s]+)$/);
+      if (!match) {
+        return res.status(400).json({ error: 'Formato inválido. Use apenas imagens JPG, PNG, WEBP ou GIF.' });
+      }
+
+      const normalizedMime = match[1] === 'image/jpg' ? 'image/jpeg' : match[1];
+      const cleanBase64 = match[2].replace(/\s+/g, '');
+      const buffer = Buffer.from(cleanBase64, 'base64');
+
+      if (buffer.length === 0 || buffer.length > MAX_UPLOAD_BYTES) {
+        return res.status(400).json({ error: 'Imagem muito grande. O tamanho máximo permitido é 4 MB.' });
+      }
+
+      if (!verifyImageMagicBytes(normalizedMime, buffer)) {
+        return res.status(400).json({ error: 'O arquivo enviado não corresponde a uma imagem válida.' });
+      }
+
+      const id = `img-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`;
+      const safeFileName = typeof fileName === 'string' ? fileName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120) : undefined;
+
+      cacheUploadedImage(id, normalizedMime, buffer);
+      const savedInDb = await dbSaveUploadedImage(id, normalizedMime, cleanBase64, safeFileName);
+
+      return res.json({
+        success: true,
+        id,
+        url: `/api/images/${id}`,
+        savedInDb
+      });
+    } catch (err: any) {
+      console.error('[Upload Image] Error:', err);
+      return res.status(500).json({ error: 'Erro ao salvar imagem no servidor.' });
+    }
+  });
+
+  // GET Serve uploaded image safely
+  app.get('/api/images/:id', async (req, res) => {
+    try {
+      const { id } = req.params;
+      if (!id || !/^[a-zA-Z0-9_-]{4,80}$/.test(id)) {
+        return res.status(400).send('Invalid image ID');
+      }
+
+      const cached = uploadedImagesCache.get(id);
+      if (cached) {
+        res.setHeader('Content-Type', cached.mimeType);
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'");
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        return res.send(cached.buffer);
+      }
+
+      const dbImg = await dbGetUploadedImage(id);
+      if (!dbImg) {
+        return res.status(404).send('Image not found');
+      }
+
+      const allowedMimes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
+      const safeMime = allowedMimes.has(dbImg.mimeType) ? dbImg.mimeType : 'application/octet-stream';
+      const buffer = Buffer.from(dbImg.dataBase64, 'base64');
+      cacheUploadedImage(id, safeMime, buffer);
+
+      res.setHeader('Content-Type', safeMime);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'");
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return res.send(buffer);
+    } catch (err) {
+      console.error('[Serve Image] Error:', err);
+      return res.status(500).send('Error loading image');
+    }
+  });
 
   // Test MySQL DB Connection on server startup
   testDbConnection().then(async (res) => {
@@ -791,7 +909,10 @@ async function startServer() {
 
       storeDeliverySettings = {
         ...DEFAULT_DELIVERY_SETTINGS,
-        ...newSettings
+        ...newSettings,
+        deliveryOpenDays: Array.isArray(newSettings.deliveryOpenDays)
+          ? normalizeDeliveryOpenDays(newSettings.deliveryOpenDays)
+          : DEFAULT_DELIVERY_SETTINGS.deliveryOpenDays
       };
 
       const savedInDb = await dbSaveStoreSettings(storeDeliverySettings, 'delivery_settings');
@@ -818,7 +939,7 @@ async function startServer() {
     try {
       const dbLogo = await dbGetStoreSettings('store_logo');
       if (dbLogo) {
-        storeLogoUrl = typeof dbLogo === 'object' ? (dbLogo.logoUrl || '') : String(dbLogo);
+        storeLogoUrl = (typeof dbLogo === 'object' ? (dbLogo.logoUrl || '') : String(dbLogo)).replace(/jaws\.app\.br/gi, 'b3.seg.br');
       }
     } catch (err) {
       console.warn('Error fetching store logo from DB:', err);
@@ -830,7 +951,7 @@ async function startServer() {
   app.post('/api/settings/logo', async (req, res) => {
     try {
       const { logoUrl } = req.body || {};
-      storeLogoUrl = typeof logoUrl === 'string' ? logoUrl.trim() : '';
+      storeLogoUrl = typeof logoUrl === 'string' ? logoUrl.trim().replace(/jaws\.app\.br/gi, 'b3.seg.br') : '';
 
       const savedInDb = await dbSaveStoreSettings({ logoUrl: storeLogoUrl }, 'store_logo');
 
@@ -1440,7 +1561,7 @@ async function startServer() {
         stock: Number(ingredient.stock),
         minStock: Number(ingredient.minStock),
         price: Number(ingredient.price),
-        image: ingredient.image !== undefined ? ingredient.image : ingredients[existingIndex].image,
+        image: ingredient.image !== undefined ? String(ingredient.image).replace(/jaws\.app\.br/gi, 'b3.seg.br') : ingredients[existingIndex].image,
         showOnHome: ingredient.showOnHome !== undefined ? Boolean(ingredient.showOnHome) : (ingredients[existingIndex].showOnHome !== false),
         trackStock: ingredient.trackStock !== undefined ? Boolean(ingredient.trackStock) : (ingredients[existingIndex].trackStock !== false)
       };
@@ -1456,7 +1577,7 @@ async function startServer() {
         minStock: Number(ingredient.minStock) || 10,
         unit: ingredient.unit || 'porções',
         price: Number(ingredient.price) || 0,
-        image: ingredient.image || '',
+        image: ingredient.image ? String(ingredient.image).replace(/jaws\.app\.br/gi, 'b3.seg.br') : '',
         showOnHome: ingredient.showOnHome !== undefined ? Boolean(ingredient.showOnHome) : true,
         trackStock: ingredient.trackStock !== undefined ? Boolean(ingredient.trackStock) : true
       };
@@ -1770,6 +1891,7 @@ async function startServer() {
     const isCombo = Boolean(product.isCombo || product.category === 'combo' || product.displaySection === 'combo');
     const targetProd: ReadyProduct = {
       ...product,
+      image: (product.image || '').replace(/jaws\.app\.br/gi, 'b3.seg.br'),
       isCombo,
       comboItems: Array.isArray(product.comboItems) ? product.comboItems : [],
       showInComboSection: Boolean(product.showInComboSection),

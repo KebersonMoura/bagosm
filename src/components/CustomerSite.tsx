@@ -54,9 +54,11 @@ import {
   calculateHaversineDistance,
   calculateDeliveryFee,
   checkDeliveryOpeningStatus,
+  formatDeliveryOpenDays,
   StoreDeliverySettings,
   DEFAULT_DELIVERY_SETTINGS
 } from '../utils/deliverySettings';
+import { sanitizeImageUrl } from '../utils/imageUrl';
 
 interface CustomerSiteProps {
   ingredients: Ingredient[];
@@ -641,7 +643,7 @@ export default function CustomerSite({
   const handleAddComboToCart = (item: any, quantity: number = 1) => {
     const raw = item.rawReadyProduct || item;
     const numPrice = Number(raw.price) || 0;
-    const comboImg = raw.image || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
+    const comboImg = sanitizeImageUrl(raw.image) || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
     const comboDrinksAndCookies = raw.comboItems?.map((ci: any) => `${ci.quantity || 1}x ${ci.name}`) || [];
     const formattedConfig = raw.sandwichConfig ? {
       ...raw.sandwichConfig,
@@ -887,7 +889,7 @@ export default function CustomerSite({
   }, [expressCombinedItems, expressSearch, expressCategory, expressSubcategory]);
 
   const getItemImageUrl = (item: typeof expressCombinedItems[0]) => {
-    if (item.image) return item.image;
+    if (item.image) return sanitizeImageUrl(item.image);
     if (item.category === 'sandwich' || item.category === 'bread') return 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
     if (item.category === 'salad' || item.category === 'vegetable') return 'https://images.unsplash.com/photo-1540420773420-3366772f4999?w=600&auto=format&fit=crop&q=80';
     if (item.category === 'drink' || item.category === 'juice' || item.category === 'vitamin' || item.category === 'drink_cookie') return 'https://images.unsplash.com/photo-1544145945-f90425340c7e?w=600&auto=format&fit=crop&q=80';
@@ -1077,7 +1079,7 @@ export default function CustomerSite({
 
   // Helper to get image URL for an ingredient, fallbacking if missing
   const getIngredientImage = (item: Ingredient) => {
-    if (item.image && item.image.trim().length > 0) return item.image;
+    if (item.image && item.image.trim().length > 0) return sanitizeImageUrl(item.image);
     switch (item.category) {
       case 'bread':
         return 'https://images.unsplash.com/photo-1509440159596-0249088772ff?w=150&auto=format&fit=crop&q=80';
@@ -1890,6 +1892,10 @@ export default function CustomerSite({
                           }
                           return rawInfo;
                         } else {
+                          if (deliveryStatus.isDayClosed) {
+                            const openDaysText = formatDeliveryOpenDays(storeDeliverySettings.deliveryOpenDays);
+                            return `🔴 Fechado hoje • Dias: ${openDaysText}`;
+                          }
                           if (!rawInfo || rawInfo.toLowerCase().includes('aberto')) {
                             return `🔴 Fechado • Abrimos às ${deliveryOpeningTime || '15:00'}`;
                           }
@@ -2013,7 +2019,7 @@ export default function CustomerSite({
                   const numPrice = Number(promoItem.price) || 0;
                   const numOrigPrice = Number(promoItem.originalPrice) || 0;
                   const hasDiscount = Boolean(promoItem.originalPrice && numOrigPrice > numPrice);
-                  const promoImg = promoItem.image || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
+                  const promoImg = sanitizeImageUrl(promoItem.image) || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
 
                   return (
                     <div
@@ -2151,7 +2157,7 @@ export default function CustomerSite({
                   const numPrice = Number(combo.price) || 0;
                   const numOrigPrice = Number(combo.originalPrice) || 0;
                   const hasDiscount = Boolean(combo.originalPrice && numOrigPrice > numPrice);
-                  const comboImg = combo.image || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
+                  const comboImg = sanitizeImageUrl(combo.image) || 'https://images.unsplash.com/photo-1550547660-d9450f859349?w=600&auto=format&fit=crop&q=80';
 
                   return (
                     <div
@@ -4186,7 +4192,7 @@ export default function CustomerSite({
                   <div className="flex gap-3 items-center bg-slate-50 p-3 rounded-xl border border-slate-100">
                     {quickBuyProduct.image && (
                       <img 
-                        src={quickBuyProduct.image} 
+                        src={sanitizeImageUrl(quickBuyProduct.image)} 
                         alt={quickBuyProduct.name} 
                         className="w-14 h-14 object-cover rounded-lg border border-slate-100 shrink-0 bg-white"
                         referrerPolicy="no-referrer"
@@ -4719,7 +4725,7 @@ export default function CustomerSite({
                             <div className="flex items-start gap-2 flex-1 min-w-0">
                               {item.image ? (
                                 <img 
-                                  src={item.image} 
+                                  src={sanitizeImageUrl(item.image)} 
                                   alt={item.name} 
                                   className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0 bg-white"
                                   referrerPolicy="no-referrer"

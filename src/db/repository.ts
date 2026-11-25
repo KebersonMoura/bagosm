@@ -366,11 +366,27 @@ export async function initDatabaseTables(): Promise<boolean> {
     await ensureDefaultUsersInDb();
     await ensureCouponsTable();
     await ensureLoyaltyCardsTable();
+    await ensureUploadedImagesTable();
+
+    // Migrate any legacy jaws.app.br image URLs to b3.seg.br
+    try {
+      await query(`UPDATE ready_products SET image = REPLACE(image, 'jaws.app.br', 'b3.seg.br') WHERE image LIKE '%jaws.app.br%'`);
+      await query(`UPDATE ingredients SET image = REPLACE(image, 'jaws.app.br', 'b3.seg.br') WHERE image LIKE '%jaws.app.br%'`);
+      await query(`UPDATE store_settings SET setting_value = REPLACE(setting_value, 'jaws.app.br', 'b3.seg.br') WHERE setting_value LIKE '%jaws.app.br%'`);
+    } catch {
+      // ignore
+    }
+
     return true;
   } catch (err) {
     console.warn('[MySQL Repository] Table auto-creation notice:', err);
     return false;
   }
+}
+
+export function normalizeImageUrl(url: string | undefined | null): string {
+  if (!url || typeof url !== 'string') return '';
+  return url.replace(/jaws\.app\.br/gi, 'b3.seg.br');
 }
 
 // ==============================================================================
@@ -394,7 +410,7 @@ export async function dbGetIngredients(): Promise<Ingredient[] | null> {
       minStock: Number(r.minStock),
       unit: r.unit,
       price: Number(r.price),
-      image: r.image || '',
+      image: normalizeImageUrl(r.image),
       showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true,
       trackStock: r.trackStock !== undefined && r.trackStock !== null ? Boolean(r.trackStock) : true
     }));
@@ -415,7 +431,7 @@ export async function dbGetIngredients(): Promise<Ingredient[] | null> {
         minStock: Number(r.minStock),
         unit: r.unit,
         price: Number(r.price),
-        image: r.image || '',
+        image: normalizeImageUrl(r.image),
         showOnHome: r.showOnHome !== undefined && r.showOnHome !== null ? Boolean(r.showOnHome) : true,
         trackStock: true
       }));
@@ -428,6 +444,7 @@ export async function dbGetIngredients(): Promise<Ingredient[] | null> {
 export async function dbSaveIngredient(ing: Ingredient): Promise<boolean> {
   const showOnHomeVal = ing.showOnHome !== false ? 1 : 0;
   const trackStockVal = ing.trackStock !== false ? 1 : 0;
+  const cleanImage = normalizeImageUrl(ing.image);
   try {
     await query(`
       INSERT INTO ingredients (id, name, category, subcategory, purchase_price, stock, min_stock, unit, price, image, show_on_home, track_stock)
@@ -444,7 +461,7 @@ export async function dbSaveIngredient(ing: Ingredient): Promise<boolean> {
         image = VALUES(image),
         show_on_home = VALUES(show_on_home),
         track_stock = VALUES(track_stock)
-    `, [ing.id, ing.name, ing.category, ing.subcategory || null, ing.purchasePrice || 0, ing.stock, ing.minStock, ing.unit, ing.price, ing.image || '', showOnHomeVal, trackStockVal]);
+    `, [ing.id, ing.name, ing.category, ing.subcategory || null, ing.purchasePrice || 0, ing.stock, ing.minStock, ing.unit, ing.price, cleanImage, showOnHomeVal, trackStockVal]);
     return true;
   } catch (err) {
     // Fallback without track_stock
@@ -566,7 +583,7 @@ export async function dbGetReadyProducts(): Promise<ReadyProduct[] | null> {
       isPopular: Boolean(r.isPopular),
       isPromo: Boolean(r.isPromo),
       badgeText: r.badgeText || undefined,
-      image: r.image || '',
+      image: normalizeImageUrl(r.image),
       category: r.category || 'sandwich',
       subcategory: r.subcategory || undefined,
       displaySection: r.displaySection || 'cardapio',
@@ -601,7 +618,7 @@ export async function dbGetReadyProducts(): Promise<ReadyProduct[] | null> {
         isPopular: Boolean(r.isPopular),
         isPromo: Boolean(r.isPromo),
         badgeText: r.badgeText || undefined,
-        image: r.image || '',
+        image: normalizeImageUrl(r.image),
         category: r.category || 'sandwich',
         subcategory: r.subcategory || undefined,
         displaySection: r.displaySection || 'cardapio',
@@ -624,6 +641,7 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
   const showInPromoSectionVal = prod.showInPromoSection ? 1 : 0;
   const displayOrderVal = typeof prod.displayOrder === 'number' ? prod.displayOrder : 0;
   const skipIngredientsVal = prod.skipIngredients !== undefined ? (prod.skipIngredients ? 1 : 0) : (prod.isCombo ? 1 : 0);
+  const cleanImage = normalizeImageUrl(prod.image);
 
   try {
     await query(`
@@ -663,7 +681,7 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
       prod.isPopular ? 1 : 0,
       prod.isPromo ? 1 : 0,
       prod.badgeText || null,
-      prod.image || '',
+      cleanImage,
       prod.category || 'sandwich',
       prod.subcategory || null,
       prod.displaySection || 'cardapio',
@@ -716,7 +734,7 @@ export async function dbSaveReadyProduct(prod: ReadyProduct): Promise<boolean> {
         prod.isPopular ? 1 : 0,
         prod.isPromo ? 1 : 0,
         prod.badgeText || null,
-        prod.image || '',
+        cleanImage,
         prod.category || 'sandwich',
         prod.subcategory || null,
         prod.displaySection || 'cardapio',
@@ -2103,7 +2121,10 @@ export async function dbGetStoreSettings(key = 'delivery_settings'): Promise<any
     await ensureStoreSettingsTable();
     const rows: any = await query(`SELECT setting_value FROM store_settings WHERE setting_key = ?`, [key]);
     if (rows && rows.length > 0 && rows[0].setting_value) {
-      return typeof rows[0].setting_value === 'string' ? JSON.parse(rows[0].setting_value) : rows[0].setting_value;
+      const raw = typeof rows[0].setting_value === 'string'
+        ? rows[0].setting_value.replace(/jaws\.app\.br/gi, 'b3.seg.br')
+        : rows[0].setting_value;
+      return typeof raw === 'string' ? JSON.parse(raw) : raw;
     }
     return null;
   } catch (err) {
@@ -2117,7 +2138,7 @@ export async function dbSaveStoreSettings(value: any, key = 'delivery_settings')
   if (!status.isConnected) return false;
   try {
     await ensureStoreSettingsTable();
-    const jsonStr = JSON.stringify(value);
+    const jsonStr = JSON.stringify(value).replace(/jaws\.app\.br/gi, 'b3.seg.br');
     await query(`
       INSERT INTO store_settings (setting_key, setting_value)
       VALUES (?, ?)
@@ -2774,3 +2795,75 @@ export async function dbSetLoyaltyRewardClaimed(
     return false;
   }
 }
+
+// ==============================================================================
+// UPLOADED IMAGES REPOSITORY (Persists computer-uploaded product/stock images)
+// ==============================================================================
+export async function ensureUploadedImagesTable(): Promise<void> {
+  const status = getDbStatus();
+  if (!status.isConnected) return;
+  try {
+    await query(`
+      CREATE TABLE IF NOT EXISTS uploaded_images (
+        id VARCHAR(80) PRIMARY KEY,
+        mime_type VARCHAR(60) NOT NULL,
+        data_base64 LONGTEXT NOT NULL,
+        file_name VARCHAR(255) DEFAULT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+  } catch (e) {
+    console.warn('[MySQL Repository] Notice creating uploaded_images table:', e);
+  }
+}
+
+export async function dbSaveUploadedImage(
+  id: string,
+  mimeType: string,
+  dataBase64: string,
+  fileName?: string
+): Promise<boolean> {
+  const status = getDbStatus();
+  if (!status.isConnected) return false;
+  try {
+    await ensureUploadedImagesTable();
+    await query(`
+      INSERT INTO uploaded_images (id, mime_type, data_base64, file_name)
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE
+        mime_type = VALUES(mime_type),
+        data_base64 = VALUES(data_base64),
+        file_name = VALUES(file_name)
+    `, [id, mimeType, dataBase64, fileName ? fileName.slice(0, 250) : null]);
+    return true;
+  } catch (err) {
+    console.error('[MySQL Repository] Error saving uploaded image:', err);
+    return false;
+  }
+}
+
+export async function dbGetUploadedImage(
+  id: string
+): Promise<{ id: string; mimeType: string; dataBase64: string } | null> {
+  const status = getDbStatus();
+  if (!status.isConnected) return null;
+  try {
+    await ensureUploadedImagesTable();
+    const rows: any = await query(
+      `SELECT id, mime_type as mimeType, data_base64 as dataBase64 FROM uploaded_images WHERE id = ? LIMIT 1`,
+      [id]
+    );
+    if (rows && rows.length > 0 && rows[0].dataBase64) {
+      return {
+        id: rows[0].id,
+        mimeType: rows[0].mimeType,
+        dataBase64: rows[0].dataBase64
+      };
+    }
+    return null;
+  } catch (err) {
+    console.error('[MySQL Repository] Error fetching uploaded image:', err);
+    return null;
+  }
+}
+
